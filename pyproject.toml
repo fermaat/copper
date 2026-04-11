@@ -1,76 +1,67 @@
 [project]
-name = "package-name"
+name = "copper"
 version = "0.1.0"
-description = "Minimal Python package template"
+description = "Mentecobres: AI-maintained knowledge bases, inspired by Karpathy and the Cosmere"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "httpx>=0.25",
+    "typer>=0.12",
+    "rich>=13.0",
     "pyyaml>=6.0.3",
+    "httpx>=0.25",
 ]
+
+[project.scripts]
+copper = "copper.cli:app"
 
 [project.optional-dependencies]
 dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "black>=23.0",
+    "ruff>=0.1",
+    "mypy>=1.0",
+    "isort>=5.12",
+]
+llm = [
+    "core-llm-bridge @ file:///Users/ferveloz/data/projects/core-llm-bridge",
+]
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pdm]
+distribution = true
+
+[tool.pdm.dev-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
     "black>=23.0",
     "ruff>=0.1",
     "mypy>=1.0",
     "isort>=5.12",
 ]
 
-[tool.pdm]
-distribution = false
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [tool.mypy]
 python_version = "3.12"
-strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
-disallow_incomplete_defs = true
 check_untyped_defs = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
-strict_equality = true
 
 [tool.black]
 line-length = 100
 target-version = ["py312"]
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  \.git
-  | \.venv
-  | __pycache__
-  | build
-  | dist
-)/
-'''
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-exclude = [
-    ".git",
-    "__pycache__",
-    "build",
-    "dist",
-    ".venv",
-]
 
 [tool.ruff.lint]
-ignore = [
-    "E501",
-    "E203",
-]
-
-[tool.coverage.run]
-source = ["src"]
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "if __name__ == .__main__.:",
-]
+ignore = ["E501", "E203"]
