@@ -12,8 +12,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from copper.config import settings
 
-MINDS_DIR = Path.home() / ".copper" / "minds"
+MINDS_DIR = settings.minds_path
 
 
 @dataclass

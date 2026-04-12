@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Copper — Mentecobres</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+  <div class="layout">
+
+    <!-- Sidebar: mind list -->
+    <aside class="sidebar">
+      <div class="logo">⚙ COPPER</div>
+      <div class="logo-sub">mentecobres / knowledge archive</div>
+
+      <div class="nav-section">Copperminds</div>
+      <div id="mind-list">
+        {% for mind in minds %}
+        <div class="mind-item" onclick="selectMind('{{ mind.name }}')" id="nav-{{ mind.name }}">
+          {{ mind.name }}
+          <div class="mind-topic">{{ mind.config.topic }}</div>
+        </div>
+        {% else %}
+        <div class="text-dim">No copperminds yet.</div>
+        {% endfor %}
+      </div>
+
+      <button class="btn-forge" onclick="openForgeModal()">⚒ Forge new mind</button>
+    </aside>
+
+    <!-- Main area -->
+    <main class="main" id="main-panel">
+
+      <!-- Empty state -->
+      <div id="empty-state" {% if minds %}class="hidden"{% endif %}>
+        <div class="card">
+          <div class="card-title">⚙ Welcome to Copper</div>
+          <p class="text-dim" style="line-height:1.7">
+            Forge a coppermind to start storing knowledge.<br>
+            Each mind is an AI-maintained wiki over a set of raw sources.<br><br>
+            <span class="text-copper">The Archivist reads. The Feruchemist asks. The copper remembers.</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Mind detail panel (populated by JS) -->
+      <div id="mind-detail" class="hidden">
+
+        <!-- Stats -->
+        <div class="card" id="mind-stats"></div>
+
+        <!-- Store -->
+        <div class="card">
+          <div class="card-title">📥 Store a source</div>
+          <form id="store-form">
+            <label>Source file (.md, .txt, .pdf)</label>
+            <input type="file" id="store-file" accept=".md,.txt,.pdf,.html">
+            <button type="submit" class="btn btn-primary btn-sm">
+              Store
+              <span class="htmx-indicator">…</span>
+            </button>
+          </form>
+          <div id="store-result" class="mt-1 text-dim"></div>
+        </div>
+
+        <!-- Tap -->
+        <div class="card">
+          <div class="card-title">🔍 Tap the coppermind</div>
+          <label>Question</label>
+          <textarea id="tap-question" placeholder="What do you want to know?"></textarea>
+          <div class="flex">
+            <label style="margin:0">
+              <input type="checkbox" id="tap-with-links"> Include linked minds
+            </label>
+            <label style="margin:0">
+              <input type="checkbox" id="tap-save"> Save to outputs
+            </label>
+            <button class="btn btn-primary btn-sm" onclick="runTap()">Tap</button>
+            <button class="btn btn-ghost btn-sm" onclick="runTapStream()">Stream</button>
+          </div>
+          <div id="tap-connections" class="mt-1"></div>
+          <div id="tap-answer" class="answer-box mt-1" style="display:none"></div>
+        </div>
+
+        <!-- Polish -->
+        <div class="card">
+          <div class="card-title">🪙 Polish (health check)</div>
+          <p class="text-dim" style="font-size:0.8rem;margin-bottom:0.75rem">
+            Run a full wiki audit: contradictions, orphan pages, missing citations.
+          </p>
+          <button class="btn btn-ghost btn-sm" onclick="runPolish()">Run polish</button>
+          <div id="polish-result" class="answer-box mt-1" style="display:none"></div>
+        </div>
+
+        <!-- Wiki pages -->
+        <div class="card">
+          <div class="card-title">📄 Wiki pages</div>
+          <div id="wiki-pages-list" class="text-dim">—</div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Forge modal -->
+  <div class="modal-overlay" id="forge-modal">
+    <div class="modal">
+      <div class="modal-title">⚒ Forge a new coppermind</div>
+      <label>Name (slug)</label>
+      <input type="text" id="forge-name" placeholder="my-research">
+      <label>Topic</label>
+      <input type="text" id="forge-topic" placeholder="Artificial intelligence and transformers">
+      <div class="flex" style="justify-content:flex-end; margin-top:0.5rem">
+        <button class="btn btn-ghost btn-sm" onclick="closeForgeModal()">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="forgeMind()">Forge</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentMind = null;
+
+    // ----------------------------------------------------------------
+    // Mind selection
+    // ----------------------------------------------------------------
+    async function selectMind(name) {
+      currentMind = name;
+      document.querySelectorAll('.mind-item').forEach(el => el.classList.remove('active'));
+      const navEl = document.getElementById('nav-' + name);
+      if (navEl) navEl.classList.add('active');
+
+      document.getElementById('empty-state').classList.add('hidden');
+      document.getElementById('mind-detail').classList.remove('hidden');
+
+      const [stats, pages] = await Promise.all([
+        fetch(`/minds/${name}`).then(r => r.json()),
+        fetch(`/minds/${name}/wiki`).then(r => r.json()),
+      ]);
+
+      // Stats card
+      document.getElementById('mind-stats').innerHTML = `
+        <div class="card-title text-copper">${stats.name}</div>
+        <div class="text-dim" style="margin-bottom:1rem">${stats.topic}</div>
+        <div class="stats">
+          <div><div class="stat-value">${stats.raw_sources}</div><div class="stat-label">raw sources</div></div>
+          <div><div class="stat-value">${stats.wiki_pages}</div><div class="stat-label">wiki pages</div></div>
+          <div><div class="stat-value">${stats.linked_minds.length}</div><div class="stat-label">linked minds</div></div>
+        </div>
+        ${stats.linked_minds.length ? `<div class="text-dim">Linked: ${stats.linked_minds.map(m => `<span class="connection-tag">${m}</span>`).join('')}</div>` : ''}
+      `;
+
+      // Wiki pages list
+      document.getElementById('wiki-pages-list').innerHTML = pages.length
+        ? pages.map(p => `<div class="wiki-page">· ${p}</div>`).join('')
+        : '<span class="text-dim">No pages yet. Store a source first.</span>';
+
+      // Reset result panels
+      document.getElementById('tap-answer').style.display = 'none';
+      document.getElementById('polish-result').style.display = 'none';
+      document.getElementById('store-result').textContent = '';
+    }
+
+    // ----------------------------------------------------------------
+    // Store
+    // ----------------------------------------------------------------
+    document.getElementById('store-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const file = document.getElementById('store-file').files[0];
+      if (!file || !currentMind) return;
+
+      const fd = new FormData();
+      fd.append('file', file);
+
+      const result = document.getElementById('store-result');
+      result.textContent = 'Storing…';
+
+      const res = await fetch(`/minds/${currentMind}/store`, { method: 'POST', body: fd });
+      const data = await res.json();
+
+      if (res.ok) {
+        result.textContent = `✓ ${data.source} → ${data.pages_written.length} wiki pages updated`;
+        selectMind(currentMind);  // refresh stats
+      } else {
+        result.textContent = `✗ ${data.detail}`;
+      }
+    });
+
+    // ----------------------------------------------------------------
+    // Tap (single response)
+    // ----------------------------------------------------------------
+    async function runTap() {
+      if (!currentMind) return;
+      const question = document.getElementById('tap-question').value.trim();
+      if (!question) return;
+
+      const answerEl = document.getElementById('tap-answer');
+      const connectionsEl = document.getElementById('tap-connections');
+      answerEl.textContent = 'Tapping the coppermind…';
+      answerEl.style.display = 'block';
+      connectionsEl.innerHTML = '';
+
+      const res = await fetch(`/minds/${currentMind}/tap`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question,
+          save: document.getElementById('tap-save').checked,
+          with_links: document.getElementById('tap-with-links').checked,
+        }),
+      });
+      const data = await res.json();
+
+      answerEl.textContent = data.answer;
+      if (data.connections.length) {
+        connectionsEl.innerHTML = data.connections.map(c => `<span class="connection-tag">${c}</span>`).join('');
+      }
+    }
+
+    // ----------------------------------------------------------------
+    // Tap (streaming via SSE)
+    // ----------------------------------------------------------------
+    function runTapStream() {
+      if (!currentMind) return;
+      const question = document.getElementById('tap-question').value.trim();
+      if (!question) return;
+
+      const answerEl = document.getElementById('tap-answer');
+      answerEl.textContent = '';
+      answerEl.classList.add('streaming');
+      answerEl.style.display = 'block';
+
+      const params = new URLSearchParams({
+        question,
+        save: document.getElementById('tap-save').checked,
+        with_links: document.getElementById('tap-with-links').checked,
+      });
+
+      // POST body via fetch then read SSE stream
+      fetch(`/minds/${currentMind}/tap/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, with_links: document.getElementById('tap-with-links').checked }),
+      }).then(res => {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+
+        function read() {
+          reader.read().then(({ done, value }) => {
+            if (done) { answerEl.classList.remove('streaming'); return; }
+            const text = decoder.decode(value);
+            // Parse SSE lines
+            text.split('\n').forEach(line => {
+              if (line.startsWith('data: ')) {
+                const chunk = line.slice(6);
+                if (chunk === '[DONE]') { answerEl.classList.remove('streaming'); return; }
+                answerEl.textContent += chunk;
+              }
+            });
+            read();
+          });
+        }
+        read();
+      });
+    }
+
+    // ----------------------------------------------------------------
+    // Polish
+    // ----------------------------------------------------------------
+    async function runPolish() {
+      if (!currentMind) return;
+      const resultEl = document.getElementById('polish-result');
+      resultEl.textContent = 'The Archivist is inspecting the coppermind…';
+      resultEl.style.display = 'block';
+
+      const res = await fetch(`/minds/${currentMind}/polish`, { method: 'POST' });
+      const data = await res.json();
+      resultEl.textContent = data.report + (data.structural_issues.length
+        ? '\n\n--- Structural ---\n' + data.structural_issues.join('\n')
+        : '');
+    }
+
+    // ----------------------------------------------------------------
+    // Forge modal
+    // ----------------------------------------------------------------
+    function openForgeModal() { document.getElementById('forge-modal').classList.add('open'); }
+    function closeForgeModal() { document.getElementById('forge-modal').classList.remove('open'); }
+
+    async function forgeMind() {
+      const name = document.getElementById('forge-name').value.trim();
+      const topic = document.getElementById('forge-topic').value.trim();
+      if (!name || !topic) return;
+
+      const res = await fetch('/minds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, topic }),
+      });
+
+      if (res.ok) {
+        closeForgeModal();
+        // Add to sidebar and select
+        const list = document.getElementById('mind-list');
+        const el = document.createElement('div');
+        el.className = 'mind-item';
+        el.id = 'nav-' + name;
+        el.onclick = () => selectMind(name);
+        el.innerHTML = `${name}<div class="mind-topic">${topic}</div>`;
+        list.appendChild(el);
+        document.getElementById('empty-state').classList.add('hidden');
+        selectMind(name);
+        document.getElementById('forge-name').value = '';
+        document.getElementById('forge-topic').value = '';
+      }
+    }
+
+    // Close modal on overlay click
+    document.getElementById('forge-modal').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeForgeModal();
+    });
+
+    // Auto-select first mind if any
+    {% if minds %}
+    selectMind('{{ minds[0].name }}');
+    {% endif %}
+  </script>
+</body>
+</html>

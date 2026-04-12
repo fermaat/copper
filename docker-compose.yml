@@ -1,0 +1,27 @@
+# Copper API service
+# Ollama is expected to run on the host (or another external service)
+# Configure OLLAMA_BASE_URL in .env to point to it
+
+services:
+  copper:
+    build: .
+    ports:
+      - "${COPPER_PORT:-8000}:8000"
+    volumes:
+      # Persist copperminds across container restarts
+      - copper-minds:/data/minds
+    env_file:
+      - .env
+    environment:
+      # Override with host.docker.internal if Ollama runs on the host Mac/Windows
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  copper-minds:
+    driver: local

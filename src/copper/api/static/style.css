@@ -1,0 +1,121 @@
+:root {
+  --copper: #b87333;
+  --copper-light: #d4956a;
+  --copper-dark: #7a4d22;
+  --bg: #0f0f0f;
+  --bg-card: #1a1a1a;
+  --bg-input: #111;
+  --text: #e8e0d5;
+  --text-dim: #8a7f76;
+  --border: #2e2e2e;
+  --green: #4caf6e;
+  --red: #c0392b;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* Layout */
+.layout { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+.sidebar { background: var(--bg-card); border-right: 1px solid var(--border); padding: 1.5rem 1rem; }
+.main { padding: 2rem; overflow-y: auto; }
+
+/* Header */
+.logo { color: var(--copper); font-size: 1.5rem; font-weight: bold; letter-spacing: 0.1em; margin-bottom: 0.25rem; }
+.logo-sub { color: var(--text-dim); font-size: 0.7rem; margin-bottom: 2rem; }
+
+/* Nav minds list */
+.nav-section { font-size: 0.65rem; color: var(--copper); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 0.75rem; }
+.mind-item {
+  display: block; padding: 0.5rem 0.75rem; border-radius: 4px;
+  cursor: pointer; font-size: 0.8rem; color: var(--text-dim);
+  border: 1px solid transparent; margin-bottom: 0.25rem;
+  transition: all 0.15s;
+}
+.mind-item:hover, .mind-item.active {
+  background: rgba(184,115,51,0.1); border-color: var(--copper-dark); color: var(--text);
+}
+.mind-item .mind-topic { font-size: 0.65rem; color: var(--text-dim); margin-top: 0.15rem; }
+
+/* Forge button */
+.btn-forge {
+  width: 100%; margin-top: 1.5rem; padding: 0.6rem; background: transparent;
+  border: 1px solid var(--copper-dark); color: var(--copper); border-radius: 4px;
+  cursor: pointer; font-family: inherit; font-size: 0.8rem; transition: all 0.15s;
+}
+.btn-forge:hover { background: rgba(184,115,51,0.15); }
+
+/* Cards */
+.card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 1.5rem; margin-bottom: 1.5rem; }
+.card-title { color: var(--copper); font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 1rem; }
+
+/* Stats row */
+.stats { display: flex; gap: 2rem; margin-bottom: 1.5rem; }
+.stat-value { font-size: 1.8rem; color: var(--copper); font-weight: bold; }
+.stat-label { font-size: 0.65rem; color: var(--text-dim); margin-top: 0.25rem; }
+
+/* Forms */
+input, textarea, select {
+  width: 100%; background: var(--bg-input); border: 1px solid var(--border);
+  color: var(--text); border-radius: 4px; padding: 0.6rem 0.75rem;
+  font-family: inherit; font-size: 0.85rem; margin-bottom: 0.75rem;
+  transition: border-color 0.15s;
+}
+input:focus, textarea:focus { outline: none; border-color: var(--copper-dark); }
+textarea { resize: vertical; min-height: 80px; }
+label { font-size: 0.7rem; color: var(--text-dim); display: block; margin-bottom: 0.3rem; }
+
+.btn {
+  padding: 0.6rem 1.25rem; border-radius: 4px; border: none; cursor: pointer;
+  font-family: inherit; font-size: 0.85rem; transition: all 0.15s;
+}
+.btn-primary { background: var(--copper-dark); color: var(--text); }
+.btn-primary:hover { background: var(--copper); }
+.btn-sm { padding: 0.35rem 0.75rem; font-size: 0.75rem; }
+.btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
+.btn-ghost:hover { border-color: var(--copper-dark); color: var(--text); }
+
+/* Answer panel */
+.answer-box {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 1rem; min-height: 80px; white-space: pre-wrap; font-size: 0.85rem;
+  line-height: 1.6; color: var(--text);
+}
+.answer-box.streaming { border-color: var(--copper-dark); }
+
+/* Connections */
+.connection-tag {
+  display: inline-block; background: rgba(184,115,51,0.15); border: 1px solid var(--copper-dark);
+  color: var(--copper-light); border-radius: 3px; padding: 0.2rem 0.5rem;
+  font-size: 0.7rem; margin: 0.2rem;
+}
+
+/* Wiki pages list */
+.wiki-page { padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.8rem; color: var(--text-dim); }
+.wiki-page:hover { color: var(--copper-light); cursor: pointer; }
+
+/* Forge modal */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  z-index: 100; align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal { background: var(--bg-card); border: 1px solid var(--copper-dark); border-radius: 6px; padding: 2rem; width: 400px; }
+.modal-title { color: var(--copper); margin-bottom: 1.5rem; font-size: 1rem; }
+
+/* HTMX indicator */
+.htmx-indicator { display: none; color: var(--copper); font-size: 0.75rem; }
+.htmx-request .htmx-indicator { display: inline; }
+
+/* Utility */
+.flex { display: flex; gap: 0.75rem; align-items: center; }
+.text-dim { color: var(--text-dim); font-size: 0.75rem; }
+.text-copper { color: var(--copper); }
+.mt-1 { margin-top: 0.5rem; }
+.hidden { display: none; }

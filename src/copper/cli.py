@@ -49,14 +49,11 @@ console = Console()
 
 
 def _load_llm() -> LLMBase:
-    """
-    Load the configured LLM. Tries core-llm-bridge first, falls back to MockLLM.
-    Set COPPER_LLM_PROVIDER and COPPER_LLM_MODEL env vars to configure.
-    """
-    import os
+    """Load the configured LLM backend. Falls back to MockLLM if bridge is unavailable."""
+    from copper.config import settings
 
-    provider_name = os.getenv("COPPER_LLM_PROVIDER", "mock")
-    model = os.getenv("COPPER_LLM_MODEL", "")
+    provider_name = settings.copper_llm_provider
+    model = settings.copper_llm_model
 
     if provider_name == "mock":
         from copper.llm.mock import MockLLM
@@ -426,3 +423,33 @@ def graph():
         f"\n[dim]{len(minds)} mentecobre(s) · "
         f"{sum(len(m.config.linked_minds) for m in minds) // 2} enlace(s)[/dim]"
     )
+
+
+@app.command()
+def serve(
+    host: Annotated[str, typer.Option("--host", help="Bind address")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", "-p", help="Port")] = 8000,
+    reload: Annotated[bool, typer.Option("--reload", help="Auto-reload on code changes")] = False,
+):
+    """🌐  Start the Copper API server."""
+    try:
+        import uvicorn
+        from copper.api.app import create_app
+    except ImportError:
+        console.print(
+            "[red]✗ FastAPI/uvicorn not installed.[/red]\n"
+            "[dim]Install the api extra: [bold]pdm install -G api[/bold][/dim]"
+        )
+        raise typer.Exit(1)
+
+    console.print(Panel(
+        f"[bold]API:[/bold]  http://{host}:{port}\n"
+        f"[bold]Docs:[/bold] http://{host}:{port}/api/docs\n"
+        f"[bold]UI:[/bold]   http://{host}:{port}/\n\n"
+        "[dim]The Archivist awaits. Press Ctrl+C to stop.[/dim]",
+        title="[copper]🌐 Copper API[/copper]",
+        border_style="yellow",
+    ))
+
+    app_instance = create_app()
+    uvicorn.run(app_instance, host=host, port=port, reload=reload)
