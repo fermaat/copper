@@ -1,5 +1,5 @@
 """
-Polish workflow — pulir (health check of the coppermind).
+Polish workflow — health check for a coppermind.
 
 The Archivist inspects the wiki for errors, contradictions,
 orphan pages, and missing citations. Produces a lint report.

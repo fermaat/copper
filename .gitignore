@@ -4,3 +4,10 @@ __pycache__/*
 *.pyd
 .Python
 */__pycache__/*
+
+# Local Claude memory — not for version control
+memory/
+
+# Environment
+.env
+.env.local

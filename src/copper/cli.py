@@ -3,12 +3,14 @@ Copper CLI — The Archivist's interface.
 
   forge    → Create a new coppermind
   store    → Fill it with knowledge
-  tap      → Extract knowledge
+  tap      → Extract knowledge (mono or multi-mind)
   polish   → Health check
   chat     → Interactive session
   list     → List all copperminds
   status   → Stats for a coppermind
-  link     → Link two copperminds (Phase 2)
+  link     → Link two copperminds bidirectionally
+  unlink   → Remove a link between copperminds
+  graph    → Visualise the mind link graph
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
+from rich.tree import Tree
 from rich import print as rprint
 
 from copper.core.coppermind import CopperMind
@@ -160,6 +163,7 @@ def tap(
     )],
     question: Annotated[str, typer.Argument(help="Pregunta a responder")],
     save: Annotated[bool, typer.Option("--save", "-s", help="Guardar respuesta en outputs/")] = False,
+    with_links: Annotated[bool, typer.Option("--with-links", "-l", help="Incluir también las mentecobres enlazadas")] = False,
 ):
     """🔍  Tap a coppermind (extract knowledge)."""
     try:
@@ -167,6 +171,18 @@ def tap(
     except (FileNotFoundError, ValueError) as e:
         console.print(f"[red]✗ {e}[/red]")
         raise typer.Exit(1)
+
+    if with_links:
+        seen = {m.name for m in minds}
+        extra = []
+        for m in list(minds):
+            for linked in m.linked_minds():
+                if linked.name not in seen:
+                    seen.add(linked.name)
+                    extra.append(linked)
+        if extra:
+            console.print(f"[dim]+ Mentecobres enlazadas: {', '.join(m.name for m in extra)}[/dim]")
+            minds = minds + extra
 
     llm = _load_llm()
     workflow = TapWorkflow(minds, llm)
@@ -180,6 +196,11 @@ def tap(
         title=f"[cyan]💡 {question[:60]}[/cyan]",
         border_style="blue",
     ))
+
+    if result.connections:
+        console.print("\n[bold yellow]🔗 Conexiones detectadas:[/bold yellow]")
+        for conn in result.connections:
+            console.print(f"  {conn}")
 
     if result.saved_to:
         for path in result.saved_to:
@@ -278,6 +299,7 @@ def chat(
     names: Annotated[str, typer.Argument(
         help="Nombre(s) de mentecobre o --all"
     )],
+    with_links: Annotated[bool, typer.Option("--with-links", "-l", help="Incluir mentecobres enlazadas")] = False,
 ):
     """💬  Interactive chat with coppermind(s)."""
     try:
@@ -285,6 +307,17 @@ def chat(
     except (FileNotFoundError, ValueError) as e:
         console.print(f"[red]✗ {e}[/red]")
         raise typer.Exit(1)
+
+    if with_links:
+        seen = {m.name for m in minds}
+        extra = []
+        for m in list(minds):
+            for linked in m.linked_minds():
+                if linked.name not in seen:
+                    seen.add(linked.name)
+                    extra.append(linked)
+        if extra:
+            minds = minds + extra
 
     llm = _load_llm()
     workflow = TapWorkflow(minds, llm)
@@ -321,3 +354,75 @@ def chat(
             console.print(f"[dim]💾 {result.saved_to[0]}[/dim]")
 
     console.print("[dim]La memoria permanece. Hasta la próxima.[/dim]")
+
+
+@app.command()
+def link(
+    name_a: Annotated[str, typer.Argument(help="Primera mentecobre")],
+    name_b: Annotated[str, typer.Argument(help="Segunda mentecobre")],
+):
+    """🔗  Link two copperminds bidirectionally."""
+    try:
+        mind_a = CopperMind.get(name_a)
+        mind_b = CopperMind.get(name_b)
+        mind_a.link(mind_b)
+    except (FileNotFoundError, ValueError) as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(
+        f"[green]✓[/green] [cyan]{name_a}[/cyan] [dim]⟷[/dim] [cyan]{name_b}[/cyan] enlazadas.\n"
+        f"[dim]Usa `copper tap {name_a},{name_b}` o `copper tap {name_a} --with-links` para consultarlas juntas.[/dim]"
+    )
+
+
+@app.command()
+def unlink(
+    name_a: Annotated[str, typer.Argument(help="Primera mentecobre")],
+    name_b: Annotated[str, typer.Argument(help="Segunda mentecobre")],
+):
+    """✂  Unlink two copperminds."""
+    try:
+        mind_a = CopperMind.get(name_a)
+        mind_b = CopperMind.get(name_b)
+        mind_a.unlink(mind_b)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[yellow]✓[/yellow] Enlace entre [cyan]{name_a}[/cyan] y [cyan]{name_b}[/cyan] eliminado.")
+
+
+@app.command()
+def graph():
+    """🕸  Visualise the coppermind link graph."""
+    minds = CopperMind.list_all()
+    if not minds:
+        console.print("[yellow]No hay mentecobres.[/yellow]")
+        return
+
+    tree = Tree("🕸  [bold yellow]Red de Mentecobres[/bold yellow]")
+    rendered: set[str] = set()
+
+    # Nodes with links first
+    linked_minds = [m for m in minds if m.config.linked_minds]
+    solo_minds = [m for m in minds if not m.config.linked_minds]
+
+    for mind in linked_minds:
+        if mind.name in rendered:
+            continue
+        branch = tree.add(f"[cyan]{mind.name}[/cyan] [dim]({mind.config.topic})[/dim]")
+        rendered.add(mind.name)
+        for linked_name in mind.config.linked_minds:
+            branch.add(f"[green]⟷[/green] [cyan]{linked_name}[/cyan]")
+
+    if solo_minds:
+        solo_branch = tree.add("[dim]Sin enlaces[/dim]")
+        for mind in solo_minds:
+            solo_branch.add(f"[dim]{mind.name}[/dim] [dim]({mind.config.topic})[/dim]")
+
+    console.print(tree)
+    console.print(
+        f"\n[dim]{len(minds)} mentecobre(s) · "
+        f"{sum(len(m.config.linked_minds) for m in minds) // 2} enlace(s)[/dim]"
+    )

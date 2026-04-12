@@ -122,6 +122,66 @@ class CopperMind:
             if f.name not in ("index.md", "log.md") and not f.name.startswith("lint-report")
         ]
 
+    # ------------------------------------------------------------------ #
+    # Linking                                                              #
+    # ------------------------------------------------------------------ #
+
+    def link(self, other: "CopperMind") -> None:
+        """Establish a bidirectional link between this mind and another."""
+        if other.name == self.name:
+            raise ValueError("Una mentecobre no puede enlazarse consigo misma.")
+        if not other.exists():
+            raise FileNotFoundError(f"Mentecobre '{other.name}' no encontrada.")
+
+        # Reload configs fresh to avoid stale state
+        self._config = self._load_config()
+        other._config = other._load_config()
+
+        if other.name not in self.config.linked_minds:
+            self.config.linked_minds.append(other.name)
+            self.save_config()
+
+        if self.name not in other.config.linked_minds:
+            other.config.linked_minds.append(self.name)
+            other.save_config()
+
+        self.append_log("link", f"Enlazada con '{other.name}'")
+
+    def unlink(self, other: "CopperMind") -> None:
+        """Remove a bidirectional link."""
+        self._config = self._load_config()
+        other._config = other._load_config()
+
+        if other.name in self.config.linked_minds:
+            self.config.linked_minds.remove(other.name)
+            self.save_config()
+
+        if self.name in other.config.linked_minds:
+            other.config.linked_minds.remove(self.name)
+            other.save_config()
+
+        self.append_log("unlink", f"Desenlazada de '{other.name}'")
+
+    def linked_minds(self) -> list["CopperMind"]:
+        """Return all minds linked to this one (that still exist)."""
+        result = []
+        for name in self.config.linked_minds:
+            try:
+                result.append(CopperMind.get(name))
+            except FileNotFoundError:
+                pass  # Linked mind was deleted — skip silently
+        return result
+
+    def expand_with_links(self) -> list["CopperMind"]:
+        """Return this mind + all linked minds, deduped."""
+        seen = {self.name}
+        minds = [self]
+        for linked in self.linked_minds():
+            if linked.name not in seen:
+                seen.add(linked.name)
+                minds.append(linked)
+        return minds
+
     def append_log(self, action: str, description: str) -> None:
         date = datetime.now().strftime("%Y-%m-%d")
         entry = f"\n## [{date}] {action} | {description}\n"

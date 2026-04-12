@@ -24,7 +24,7 @@ dev = [
     "isort>=5.12",
 ]
 llm = [
-    "core-llm-bridge @ file:///Users/ferveloz/data/projects/core-llm-bridge",
+    "core-llm-bridge @ git+https://github.com/fermaat/core-llm-bridge.git",
 ]
 
 [build-system]

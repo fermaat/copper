@@ -1,5 +1,5 @@
 """
-Store workflow — almacenar (filling the coppermind).
+Store workflow — fill the coppermind with knowledge.
 
 The Archivist reads a source, extracts knowledge, and weaves it
 into the existing wiki. A single source should touch 10-15 pages.
