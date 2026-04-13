@@ -34,8 +34,14 @@ class StoreWorkflow:
         if not source_path.exists():
             raise FileNotFoundError(f"Fuente no encontrada: {source_path}")
 
-        source_text = source_path.read_text()
-        source_name = source_path.name
+        # Copy to raw/ if not already there, so the source is always preserved
+        raw_path = self.mind.raw_dir / source_path.name
+        if source_path.resolve() != raw_path.resolve():
+            import shutil
+            shutil.copy2(source_path, raw_path)
+
+        source_text = raw_path.read_text()
+        source_name = raw_path.name
         index_content = self.wiki.read_index()
         schema = self.mind.schema()
 

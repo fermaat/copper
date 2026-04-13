@@ -137,6 +137,11 @@ def store(
         raise typer.Exit(1)
 
     for src in sources:
+        # Warn if the file is being copied from outside raw/
+        raw_path = mind.raw_dir / src.name
+        if src.resolve() != raw_path.resolve():
+            console.print(f"[dim]→ Copiando a raw/{src.name}[/dim]")
+
         with console.status(f"[cyan]Almacenando '{src.name}' en la mentecobre...[/cyan]"):
             try:
                 result = workflow.run(src)

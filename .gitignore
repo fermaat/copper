@@ -11,3 +11,6 @@ memory/
 # Environment
 .env
 .env.local
+logs/
+CLAUDE.md
+idea.md
