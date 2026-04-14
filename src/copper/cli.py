@@ -431,6 +431,49 @@ def graph():
 
 
 @app.command()
+def watch(
+    name: Annotated[str, typer.Argument(help="Nombre de la mentecobre")],
+):
+    """👁  Watch raw/ and auto-ingest new files as they arrive."""
+    try:
+        mind = CopperMind.get(name)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    llm = _load_llm()
+
+    console.print(Panel(
+        f"[bold]Mentecobre:[/bold] [cyan]{name}[/cyan]\n"
+        f"[bold]Observando:[/bold] [dim]{mind.raw_dir}[/dim]\n\n"
+        "[dim]Copia o mueve ficheros a raw/ para almacenarlos automáticamente.\n"
+        "Ctrl+C para salir.[/dim]",
+        title="[copper]👁 Archivista en guardia[/copper]",
+        border_style="yellow",
+    ))
+
+    def _on_result(path: Path, result: StoreResult) -> None:
+        console.print(
+            f"[green]✓[/green] [bold]{result.source}[/bold] almacenado → "
+            f"[cyan]{len(result.pages_written)}[/cyan] páginas wiki actualizadas"
+        )
+        for p in result.pages_written:
+            console.print(f"  [dim]· {p}[/dim]")
+
+    def _on_error(path: Path, exc: Exception) -> None:
+        console.print(f"[red]✗ Error procesando '{path.name}': {exc}[/red]")
+
+    try:
+        from copper.watch import watch_raw_dir
+        watch_raw_dir(mind, llm, on_result=_on_result, on_error=_on_error)
+    except ImportError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print("[dim]El Archivista descansa. Hasta la próxima.[/dim]")
+
+
+@app.command()
 def serve(
     host: Annotated[str, typer.Option("--host", help="Bind address")] = "127.0.0.1",
     port: Annotated[int, typer.Option("--port", "-p", help="Port")] = 8000,

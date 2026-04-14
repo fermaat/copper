@@ -11,6 +11,7 @@ from pathlib import Path
 
 from copper.core.coppermind import CopperMind
 from copper.core.wiki import WikiManager
+from copper.ingest.registry import default_registry
 from copper.llm.base import LLMBase, Message
 
 
@@ -40,7 +41,8 @@ class StoreWorkflow:
             import shutil
             shutil.copy2(source_path, raw_path)
 
-        source_text = raw_path.read_text()
+        registry = default_registry()
+        source_text = registry.to_markdown(raw_path)
         source_name = raw_path.name
         index_content = self.wiki.read_index()
         schema = self.mind.schema()

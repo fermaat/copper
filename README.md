@@ -32,6 +32,14 @@ pdm install
 pdm install -G llm
 ```
 
+Optional extras for additional features:
+
+```bash
+pdm install -G pdf    # PDF ingestion (pdfplumber)
+pdm install -G watch  # Auto-ingest file watcher (watchdog)
+pdm install -G llm    # Real LLM provider via core-llm-bridge
+```
+
 The `copper` CLI is registered as a project script:
 
 ```bash
@@ -49,7 +57,9 @@ copper --help
 copper forge ai-safety --topic "AI safety and alignment research"
 
 # 2. Ingest a source file (copied to raw/ and processed by the Archivist)
-copper store ai-safety paper.pdf
+copper store ai-safety paper.pdf        # PDF
+copper store ai-safety notes.md         # plain markdown or Obsidian note
+copper store ai-safety transcript.txt   # any UTF-8 text
 
 # 3. Ask a question
 copper tap ai-safety "What are the main arguments against RLHF?"
@@ -70,6 +80,7 @@ Copperminds are stored in `~/.copper/minds/<name>/`. Set `COPPER_MINDS_DIR` to o
 ```
 copper forge <name> [--topic TEXT]          Create a coppermind
 copper store <name> <file> [--all]          Ingest a source (or all files in raw/)
+copper watch <name>                         Watch raw/ and auto-ingest new files
 copper tap <name|a,b|--all> <question>      Query one or more copperminds
   --save                                    Save the answer to outputs/
   --with-links                              Include linked copperminds
@@ -82,6 +93,34 @@ copper unlink <a> <b>                       Remove a link
 copper graph                                Print the link graph
 copper serve [--host] [--port] [--reload]   Start the API server
 ```
+
+---
+
+## Supported file formats
+
+| Format | Extension | Extra required |
+|---|---|---|
+| Markdown | `.md` | — (built-in) |
+| Plain text | `.txt`, `.rst`, `.html`, `.py`, … | — (built-in) |
+| Obsidian notes | `.md` with `[[wikilinks]]` | — (auto-detected, normalised) |
+| PDF | `.pdf` | `pdm install -G pdf` |
+
+Any other UTF-8 readable file (`.json`, `.yaml`, `.csv`, source code, …) is accepted by default.
+
+## Auto-ingest with `copper watch`
+
+Drop files into `raw/` and let the Archivist process them automatically:
+
+```bash
+# Terminal 1 — start the watcher
+copper watch ai-safety
+
+# Terminal 2 (or Finder) — drop a file into raw/
+cp paper.pdf ~/.copper/minds/ai-safety/raw/
+# → Archivist picks it up, updates the wiki, prints the result
+```
+
+Requires `pdm install -G watch`. The watcher polls for file-size stability before processing, so large files (big PDFs) are handled correctly.
 
 ---
 
