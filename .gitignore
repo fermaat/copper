@@ -1,16 +1,47 @@
-__pycache__/*
-*.pyc
+# Python
+__pycache__/
+*.py[cod]
 *.pyo
-*.pyd
 .Python
-*/__pycache__/*
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
 
-# Local Claude memory — not for version control
-memory/
+# PDM
+.pdm-python
+.pdm-build/
+pdm.lock
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Mypy
+.mypy_cache/
+
+# Ruff
+.ruff_cache/
+
+# Logs
+logs/*.log
 
 # Environment
 .env
 .env.local
-logs/
+
+# Claude Code (personal overrides — never commit)
+.claude/settings.local.json
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+
+# Project-specific
 CLAUDE.md
 idea.md

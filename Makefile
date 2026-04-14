@@ -1,4 +1,4 @@
-.PHONY: install install-dev lint format mypy clean
+.PHONY: install install-dev lint format mypy test check clean
 
 install:
 	pdm install
@@ -14,6 +14,12 @@ format:
 
 mypy:
 	pdm run mypy src
+
+test:
+	pdm run pytest -q
+
+check:
+	bash run_local_checks.sh
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
