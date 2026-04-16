@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -35,20 +34,17 @@ async def store(
     mind = _get_or_404(name)
     workflow = StoreWorkflow(mind, llm)
 
-    # Write upload to a temp file, then run workflow
-    suffix = Path(file.filename or "source.md").suffix or ".md"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = Path(tmp.name)
+    # Save directly to raw/ under the original filename so StoreWorkflow
+    # preserves the correct source name in the wiki (avoids tempfile slugs).
+    original_name = file.filename or "source.md"
+    raw_path = mind.raw_dir / original_name
+    content = await file.read()
+    raw_path.write_bytes(content)
 
-    try:
-        result = workflow.run(tmp_path)
-    finally:
-        tmp_path.unlink(missing_ok=True)
+    result = workflow.run(raw_path)
 
     return StoreResponse(
-        source=file.filename or tmp_path.name,
+        source=result.source,
         pages_written=result.pages_written,
         tokens_used=result.tokens_used,
     )

@@ -4,7 +4,10 @@
 FROM python:3.12-slim AS base
 WORKDIR /app
 
-# Install pdm
+# git is required for dependencies installed from GitHub (core-utils, core-llm-bridge)
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir pdm
 
 # ------------------------------------------------------------------ #
@@ -14,9 +17,13 @@ FROM base AS deps
 
 COPY pyproject.toml pdm.lock* ./
 
-# Install runtime + api extras (no dev, no llm — bridge installed separately if needed)
-RUN pdm install --no-self --no-editable -G api 2>/dev/null || \
-    pdm install --no-self --no-editable
+# Install main runtime deps from lockfile
+RUN pdm install --no-self --no-editable
+
+# PDM venvs don't ship with pip — bootstrap it, then install the LLM bridge
+RUN /app/.venv/bin/python -m ensurepip --upgrade && \
+    /app/.venv/bin/python -m pip install --no-cache-dir \
+    "core-llm-bridge @ git+https://github.com/fermaat/core-llm-bridge.git"
 
 # ------------------------------------------------------------------ #
 # Application stage                                                   #
