@@ -2,7 +2,7 @@
 
 AI-maintained knowledge bases, inspired by Karpathy's wiki concept and the Cosmere's *copperminds* — repositories of pure knowledge, maintained by a Feruchemical Archivist.
 
-You feed Copper raw sources (articles, notes, transcripts, docs). The Archivist (an LLM) reads each source and compiles it into a structured markdown wiki. No embeddings, no RAG, no vector databases — just folders and text files you can read, edit, and version-control yourself.
+You feed Copper raw sources (articles, notes, transcripts, PDFs, Obsidian vaults). The Archivist (an LLM) reads each source and compiles it into a structured markdown wiki. No embeddings, no RAG, no vector databases — just folders and text files you can read, edit, and version-control yourself.
 
 ---
 
@@ -28,13 +28,7 @@ Requires Python 3.12+. Dependencies are managed with [PDM](https://pdm-project.o
 # Install dependencies
 pdm install
 
-# Optional: install the LLM bridge (needed for Ollama / real providers)
-pdm install -G llm
-```
-
-Optional extras for additional features:
-
-```bash
+# Optional extras
 pdm install -G pdf    # PDF ingestion (pdfplumber)
 pdm install -G watch  # Auto-ingest file watcher (watchdog)
 pdm install -G llm    # Real LLM provider via core-llm-bridge
@@ -56,8 +50,8 @@ copper --help
 # 1. Create a coppermind for a topic
 copper forge ai-safety --topic "AI safety and alignment research"
 
-# 2. Ingest a source file (copied to raw/ and processed by the Archivist)
-copper store ai-safety paper.pdf        # PDF
+# 2. Ingest a source file
+copper store ai-safety paper.pdf        # PDF (with smart TOC-based chunking)
 copper store ai-safety notes.md         # plain markdown or Obsidian note
 copper store ai-safety transcript.txt   # any UTF-8 text
 
@@ -98,14 +92,27 @@ copper serve [--host] [--port] [--reload]   Start the API server
 
 ## Supported file formats
 
-| Format | Extension | Extra required |
+| Format | Extension | Notes |
 |---|---|---|
-| Markdown | `.md` | — (built-in) |
-| Plain text | `.txt`, `.rst`, `.html`, `.py`, … | — (built-in) |
-| Obsidian notes | `.md` with `[[wikilinks]]` | — (auto-detected, normalised) |
-| PDF | `.pdf` | `pdm install -G pdf` |
+| Markdown | `.md` | Built-in |
+| Plain text | `.txt`, `.rst`, `.html`, `.py`, … | Built-in; any UTF-8 file |
+| Obsidian notes | `.md` with `[[wikilinks]]` | Auto-detected; wikilinks normalised |
+| PDF | `.pdf` | Requires `pdm install -G pdf`; smart TOC-based chunking |
 
 Any other UTF-8 readable file (`.json`, `.yaml`, `.csv`, source code, …) is accepted by default.
+
+### PDF chunking strategy
+
+Large PDFs are split into semantically coherent chunks before ingestion:
+
+1. **TOC detection** — scans the first 15 pages for a table of contents (by keyword: *Index*, *Índice*, *Contents*, *Contenido*) and uses section titles as split boundaries
+2. **Pattern fallback** — if no explicit header is found, detects TOC pages by density of `Title .... page` patterns
+3. **LLM fallback** — if no TOC is found, asks the LLM to identify section boundaries from the document opening
+4. **Naive fallback** — paragraph-aware character-based split as last resort
+
+After all chunks are processed, a `polish` pass consolidates potential duplicates.
+
+---
 
 ## Auto-ingest with `copper watch`
 
@@ -120,7 +127,7 @@ cp paper.pdf ~/.copper/minds/ai-safety/raw/
 # → Archivist picks it up, updates the wiki, prints the result
 ```
 
-Requires `pdm install -G watch`. The watcher polls for file-size stability before processing, so large files (big PDFs) are handled correctly.
+Requires `pdm install -G watch`. The watcher polls for file-size stability before processing large files.
 
 ---
 
@@ -167,41 +174,44 @@ cp .env.example .env
 
 | Variable | Default | Description |
 |---|---|---|
-| `COPPER_LLM_PROVIDER` | `mock` | LLM provider (`mock`, `ollama`) |
-| `COPPER_LLM_MODEL` | _(empty)_ | Model name (e.g. `llama3.2`) |
+| `COPPER_LLM_PROVIDER` | `mock` | LLM provider: `mock`, `ollama`, `anthropic`, `openai` |
+| `COPPER_LLM_MODEL` | _(empty)_ | Model name (e.g. `llama3.2`, `claude-sonnet-4-6`) |
 | `COPPER_MINDS_DIR` | `~/.copper/minds` | Where copperminds are stored |
 | `COPPER_HOST` | `127.0.0.1` | API server host |
 | `COPPER_PORT` | `8000` | API server port |
 | `COPPER_RELOAD` | `false` | Hot-reload for development |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
+| `COPPER_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
+| `COPPER_OLLAMA_TIMEOUT` | `300` | Ollama request timeout (seconds) |
+| `COPPER_ANTHROPIC_API_KEY` | _(empty)_ | Anthropic API key |
+| `COPPER_OPENAI_API_KEY` | _(empty)_ | OpenAI API key |
 
-By default, `COPPER_LLM_PROVIDER=mock` — no real LLM calls are made. Responses are auto-generated placeholders, useful for exploring the structure without a running model.
+All provider credentials are declared in copper's own `.env` and passed explicitly to the LLM provider — no ambient environment reading by dependencies.
 
-To use Ollama:
-
-```bash
-COPPER_LLM_PROVIDER=ollama
-COPPER_LLM_MODEL=llama3.2
-OLLAMA_BASE_URL=http://localhost:11434
-```
+By default, `COPPER_LLM_PROVIDER=mock` — no real LLM calls are made.
 
 ---
 
 ## Docker
 
-Copper ships with a `Dockerfile` and `docker-compose.yml`. Ollama is expected to run externally (on the host or another service).
+Copper ships with a `Dockerfile`. Ollama is expected to run externally (on the host or another service).
 
 ```bash
-# Build and start
-docker compose up --build
+# Build
+docker build -t copper:dev .
 
-# Ollama on host Mac/Windows — host.docker.internal is set automatically
-# Override if Ollama is running elsewhere:
-OLLAMA_BASE_URL=http://my-ollama-host:11434 docker compose up
+# Run (Ollama on host)
+docker run -d --name copper \
+  -p 8000:8000 \
+  -v ~/.copper/minds:/data/minds \
+  --env-file .env \
+  -e COPPER_MINDS_DIR=/data/minds \
+  -e COPPER_HOST=0.0.0.0 \
+  -e COPPER_OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+  copper:dev
 ```
 
-Copperminds are stored in a named volume (`copper-minds`) so they persist across container restarts.
+Copperminds are stored in a host-mounted volume so they persist across container restarts.
 
 ---
 
@@ -228,23 +238,14 @@ The `schema.md` file is the most powerful customisation point. Edit it to change
 ## Development
 
 ```bash
-# Run tests
+# Run tests (all use MockLLM — no real LLM calls)
 pdm run pytest -v
 
-# Lint
+# Lint / format / type check
 pdm run ruff check src
-
-# Format
 pdm run black src
-
-# Type check
 pdm run mypy src
-
-# Clean caches
-make clean
 ```
-
-All tests use `MockLLM` — no real LLM calls are made in the test suite.
 
 ---
 
@@ -255,22 +256,29 @@ src/copper/
 ├── core/
 │   ├── coppermind.py     # CopperMind: forge, get, link, stats
 │   └── wiki.py           # WikiManager: page CRUD, frontmatter, index
+├── ingest/
+│   ├── base.py           # IngestPlugin abstract base + naive_split utility
+│   ├── plain.py          # PlainTextPlugin: .md, .txt, any UTF-8
+│   ├── obsidian.py       # ObsidianPlugin: normalises [[wikilinks]]
+│   ├── pdf.py            # PDFPlugin: pdfplumber + hybrid TOC/LLM chunking
+│   └── registry.py       # IngestRegistry: ordered plugin dispatch
 ├── llm/
 │   ├── base.py           # LLMBase abstract interface
 │   ├── mock.py           # MockLLM for tests
-│   └── bridge_adapter.py # Adapter for core-llm-bridge (Ollama etc.)
+│   └── bridge_adapter.py # Adapter for core-llm-bridge (Ollama, Anthropic, OpenAI)
 ├── workflows/
-│   ├── store.py          # Source → LLM → wiki pages
-│   ├── tap.py            # Question → LLM → answer (multi-mind aware)
+│   ├── store.py          # Source → chunks → LLM → wiki pages (+ auto-polish)
+│   ├── tap.py            # Question → wiki context → LLM → answer
 │   └── polish.py         # Wiki audit → lint report
 ├── api/
 │   ├── app.py            # FastAPI factory
 │   ├── routes/           # minds, workflows
-│   ├── deps.py           # Dependency injection
+│   ├── deps.py           # Dependency injection (LLM provider wiring)
 │   └── templates/        # Jinja2 + HTMX UI
+├── watch.py              # Watchdog-based auto-ingest
 ├── cli.py                # typer + rich CLI
-├── config.py             # pydantic-settings configuration
+├── config.py             # pydantic-settings (single source of truth for all config)
 └── server.py             # uvicorn entry point
 ```
 
-LLM integration is decoupled behind `LLMBase`. The real provider (Ollama via `core-llm-bridge`) is an optional dependency — the core system works entirely with `MockLLM` out of the box.
+LLM integration is decoupled behind `LLMBase`. The real provider is an optional dependency — the core system works entirely with `MockLLM` out of the box.
