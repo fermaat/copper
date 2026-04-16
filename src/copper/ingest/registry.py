@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from copper.ingest.base import IngestPlugin
 from copper.ingest.pdf import PDFPlugin
@@ -19,18 +20,22 @@ class IngestRegistry:
     def register(self, plugin: IngestPlugin) -> None:
         self._plugins.append(plugin)
 
-    def to_markdown(self, path: Path) -> str:
-        """Convert *path* to markdown using the first matching plugin.
-
-        Raises ValueError if no plugin can handle the file.
-        """
+    def _match(self, path: Path) -> IngestPlugin:
         for plugin in self._plugins:
             if plugin.can_handle(path):
-                return plugin.to_markdown(path)
+                return plugin
         raise ValueError(
             f"No ingest plugin found for '{path.name}'. "
             "Supported formats: .pdf, .md, .txt, and most text files."
         )
+
+    def to_markdown(self, path: Path) -> str:
+        """Convert *path* to markdown using the first matching plugin."""
+        return self._match(path).to_markdown(path)
+
+    def to_chunks(self, path: Path, max_chars: int, llm: Any = None) -> list[str]:
+        """Split *path* into chunks using the first matching plugin."""
+        return self._match(path).to_chunks(path, max_chars, llm=llm)
 
 
 def default_registry() -> IngestRegistry:

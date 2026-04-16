@@ -38,9 +38,22 @@ class Settings(CoreSettings):
         "env_file_encoding": "utf-8",
     }
 
-    # ── LLM ─────────────────────────────────────────────────────────
+    # ── LLM — provider selection ────────────────────────────────────
     copper_llm_provider: str = "mock"   # mock | ollama | anthropic | openai
     copper_llm_model: str = ""          # passed to the provider; empty = provider default
+
+    # ── LLM — Ollama ────────────────────────────────────────────────
+    copper_ollama_base_url: str = "http://localhost:11434"
+    copper_ollama_timeout: int = 300
+
+    # ── LLM — Anthropic ─────────────────────────────────────────────
+    copper_anthropic_api_key: str = ""
+    copper_anthropic_timeout: int = 300
+
+    # ── LLM — OpenAI ────────────────────────────────────────────────
+    copper_openai_api_key: str = ""
+    copper_openai_base_url: str = ""    # empty = OpenAI default endpoint
+    copper_openai_timeout: int = 300
 
     # ── Storage ─────────────────────────────────────────────────────
     copper_minds_dir: str = ""          # empty → ~/.copper/minds

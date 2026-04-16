@@ -53,15 +53,11 @@ class StoreWorkflow:
         logger.info(f"[store] Extrayendo texto de '{source_name}'...")
 
         registry = default_registry()
-        source_text = registry.to_markdown(raw_path)
+        chunks = registry.to_chunks(raw_path, MAX_CHUNK_CHARS, llm=self.llm)
 
-        char_count = len(source_text)
-        logger.info(f"[store] '{source_name}' → {char_count:,} caracteres extraídos")
-
-        chunks = _split_chunks(source_text, MAX_CHUNK_CHARS)
+        char_count = sum(len(c) for c in chunks)
+        logger.info(f"[store] '{source_name}' → {char_count:,} chars in {len(chunks)} chunk(s)")
         total_chunks = len(chunks)
-        if total_chunks > 1:
-            logger.info(f"[store] Texto dividido en {total_chunks} fragmentos de ~{MAX_CHUNK_CHARS:,} chars")
 
         schema = self.mind.schema()
         all_pages: list[str] = []
@@ -117,28 +113,6 @@ class StoreWorkflow:
             tokens_used=total_tokens,
         )
 
-
-def _split_chunks(text: str, max_chars: int) -> list[str]:
-    """Split text into chunks of at most max_chars, breaking at paragraph boundaries."""
-    if len(text) <= max_chars:
-        return [text]
-
-    chunks: list[str] = []
-    remaining = text
-    while remaining:
-        if len(remaining) <= max_chars:
-            chunks.append(remaining)
-            break
-        # Prefer splitting at a blank line, then at a newline
-        split_at = remaining.rfind("\n\n", 0, max_chars)
-        if split_at == -1:
-            split_at = remaining.rfind("\n", 0, max_chars)
-        if split_at == -1:
-            split_at = max_chars
-        chunks.append(remaining[:split_at].strip())
-        remaining = remaining[split_at:].strip()
-
-    return [c for c in chunks if c]
 
 
 def _build_store_prompt(

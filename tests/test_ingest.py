@@ -161,7 +161,134 @@ class TestPDFPlugin:
         with patch.dict("sys.modules", {"pdfplumber": mock_pdfplumber}):
             result = PDFPlugin().to_markdown(f)
 
-        assert "no contiene texto extraíble" in result
+        assert "no extractable text" in result
+
+    # ------------------------------------------------------------------ #
+    # to_chunks — hybrid chunking                                         #
+    # ------------------------------------------------------------------ #
+
+    def _make_mock_pdfplumber(self, pages: list[str]):
+        """Build a pdfplumber mock given a list of page texts."""
+        mock_pages = []
+        for text in pages:
+            p = MagicMock()
+            p.extract_text.return_value = text
+            mock_pages.append(p)
+
+        mock_pdf = MagicMock()
+        mock_pdf.__enter__ = MagicMock(return_value=mock_pdf)
+        mock_pdf.__exit__ = MagicMock(return_value=False)
+        mock_pdf.pages = mock_pages
+
+        mock_pdfplumber = MagicMock()
+        mock_pdfplumber.open.return_value = mock_pdf
+        return mock_pdfplumber
+
+    def test_to_chunks_toc_keyword_splits_by_sections(self, tmp_path):
+        """TOC page detected via keyword → chunks follow section boundaries."""
+        f = tmp_path / "book.pdf"
+        f.write_bytes(b"%PDF-1.4 fake")
+
+        toc_page = (
+            "Index\n\n"
+            "Introduction ............. 1\n"
+            "Chapter One .............. 5\n"
+            "Chapter Two .............. 12\n"
+            "Conclusion ............... 20\n"
+        )
+        intro = "Introduction\n\nThis is the introduction text with enough content."
+        ch1 = "Chapter One\n\nThis is chapter one content with enough content here."
+        ch2 = "Chapter Two\n\nThis is chapter two content with enough content here."
+        conclusion = "Conclusion\n\nThis is the conclusion with enough content here."
+
+        mock_pdfplumber = self._make_mock_pdfplumber([toc_page, intro, ch1, ch2, conclusion])
+
+        with patch.dict("sys.modules", {"pdfplumber": mock_pdfplumber}):
+            chunks = PDFPlugin().to_chunks(f, max_chars=500)
+
+        # Should produce multiple chunks aligned with sections, not a single blob
+        assert len(chunks) >= 2
+        assert any("Introduction" in c for c in chunks)
+        assert any("Chapter One" in c for c in chunks)
+
+    def test_to_chunks_toc_pattern_no_keyword(self, tmp_path):
+        """Dense dot-number pattern without a keyword header is also recognised."""
+        f = tmp_path / "manual.pdf"
+        f.write_bytes(b"%PDF-1.4 fake")
+
+        toc_page = (
+            "Overview ............. 1\n"
+            "Installation ......... 3\n"
+            "Configuration ........ 7\n"
+            "Usage ................ 11\n"
+            "Troubleshooting ...... 18\n"
+            "Reference ............ 25\n"
+            "Appendix ............. 30\n"
+            "Glossary ............. 35\n"
+            "Index ................ 40\n"
+        )
+        page2 = "Overview\n\nThis section gives an overview of the product."
+        page3 = "Installation\n\nFollow these steps to install the software."
+
+        mock_pdfplumber = self._make_mock_pdfplumber([toc_page, page2, page3])
+
+        with patch.dict("sys.modules", {"pdfplumber": mock_pdfplumber}):
+            chunks = PDFPlugin().to_chunks(f, max_chars=300)
+
+        assert len(chunks) >= 2
+
+    def test_to_chunks_llm_fallback(self, tmp_path):
+        """No TOC → LLM is called and its section titles are used as anchors."""
+        from copper.llm.mock import MockLLM
+
+        f = tmp_path / "paper.pdf"
+        f.write_bytes(b"%PDF-1.4 fake")
+
+        page1 = "Introduction\n\nThis paper presents a study of transformers in NLP."
+        page2 = "Methodology\n\nWe collected data from three public datasets."
+        page3 = "Results\n\nThe model achieved 94% accuracy on the benchmark."
+
+        mock_pdfplumber = self._make_mock_pdfplumber([page1, page2, page3])
+        llm = MockLLM(["SECTION: Introduction\nSECTION: Methodology\nSECTION: Results"])
+
+        with patch.dict("sys.modules", {"pdfplumber": mock_pdfplumber}):
+            chunks = PDFPlugin().to_chunks(f, max_chars=300, llm=llm)
+
+        assert llm._call_count == 1
+        assert len(chunks) >= 2
+        assert any("Introduction" in c for c in chunks)
+        assert any("Methodology" in c for c in chunks)
+
+    def test_to_chunks_naive_fallback_no_llm(self, tmp_path):
+        """No TOC, no LLM → falls back to naive character-based split."""
+        f = tmp_path / "plain.pdf"
+        f.write_bytes(b"%PDF-1.4 fake")
+
+        long_text = "word " * 200  # 1000 chars, no TOC structure
+        mock_pdfplumber = self._make_mock_pdfplumber([long_text])
+
+        with patch.dict("sys.modules", {"pdfplumber": mock_pdfplumber}):
+            chunks = PDFPlugin().to_chunks(f, max_chars=200)
+
+        assert len(chunks) > 1
+        assert all(len(c) <= 200 for c in chunks)
+
+    def test_to_chunks_llm_garbage_falls_back_to_naive(self, tmp_path):
+        """LLM returning no valid SECTION lines → naive split used."""
+        from copper.llm.mock import MockLLM
+
+        f = tmp_path / "paper.pdf"
+        f.write_bytes(b"%PDF-1.4 fake")
+
+        long_text = "paragraph content. " * 100
+        mock_pdfplumber = self._make_mock_pdfplumber([long_text])
+        llm = MockLLM(["I could not identify any sections in this document."])
+
+        with patch.dict("sys.modules", {"pdfplumber": mock_pdfplumber}):
+            chunks = PDFPlugin().to_chunks(f, max_chars=200, llm=llm)
+
+        assert len(chunks) > 1
+        assert all(len(c) <= 200 for c in chunks)
 
 
 # ------------------------------------------------------------------ #
