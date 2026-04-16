@@ -1,8 +1,8 @@
 """
 Runtime configuration for Copper.
 
-Uses pydantic-settings to load typed settings from environment variables
-and .env files. Follows the same pattern as core-llm-bridge/config.py.
+Settings are loaded from .env / .env.local at the project root.
+Logger is configured via core-utils' configure_logger.
 
 Usage:
     from copper.config import settings, logger
@@ -12,24 +12,20 @@ Usage:
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-from loguru import logger
-from pydantic_settings import BaseSettings
+from core_utils.logger import configure_logger, logger
+from core_utils.settings import CoreSettings
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-class Settings(BaseSettings):
+class Settings(CoreSettings):
     """
     Copper settings loaded from environment variables or .env files.
 
-    Priority order:
-        1. Environment variables
-        2. .env.local  (local overrides, not committed)
-        3. .env        (project defaults)
-        4. Hardcoded defaults below
+    Inherits environment/logging fields from CoreSettings.
+    Adds Copper-specific configuration on top.
     """
 
     model_config = {
@@ -54,13 +50,6 @@ class Settings(BaseSettings):
     copper_port: int = 8000
     copper_reload: bool = False
 
-    # ── Logging ─────────────────────────────────────────────────────
-    log_level: str = "INFO"
-    log_storage_folder: str = "logs"
-    log_console_output: bool = True
-
-    # ── Properties ──────────────────────────────────────────────────
-
     @property
     def minds_path(self) -> Path:
         """Resolved path to the copperminds directory (created if absent)."""
@@ -68,48 +57,8 @@ class Settings(BaseSettings):
         p.mkdir(parents=True, exist_ok=True)
         return p
 
-    @property
-    def logs_dir(self) -> Path:
-        """Resolved path to the logs directory (created if absent)."""
-        p = PROJECT_ROOT / self.log_storage_folder
-        p.mkdir(parents=True, exist_ok=True)
-        return p
 
-
-def configure_logger(
-    level: str | None = None,
-    enable_console: bool | None = None,
-    log_file: str | None = None,
-) -> None:
-    """Configure the Copper logger (loguru)."""
-    _level = level if level is not None else settings.log_level
-    _console = enable_console if enable_console is not None else settings.log_console_output
-    _file = log_file or str(settings.logs_dir / "copper.log")
-
-    logger.remove()
-
-    logger.add(
-        _file,
-        level=_level,
-        format=(
-            "{time:YYYY-MM-DD HH:mm:ss} | "
-            "{level: <8} | "
-            "{name}:{function}:{line} | "
-            "{message}"
-        ),
-        rotation="10 MB",
-    )
-
-    if _console:
-        logger.add(
-            sys.stderr,
-            level=_level,
-            format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | {message}",
-        )
-
-
-# ── Initialise at import ────────────────────────────────────────────
 settings = Settings()
-configure_logger()
+configure_logger(settings, log_file=str(settings.logs_dir / "copper.log"))
 
 __all__ = ["settings", "logger", "configure_logger", "PROJECT_ROOT"]
