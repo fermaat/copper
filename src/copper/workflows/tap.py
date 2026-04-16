@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from loguru import logger
+
 from copper.core.coppermind import CopperMind
 from copper.core.wiki import WikiManager
 from copper.llm.base import LLMBase, LLMResponse, Message
@@ -37,15 +39,21 @@ class TapWorkflow:
 
     def run(self, question: str, save_to_outputs: bool = False) -> TapResult:
         # Gather context from all selected minds
+        mind_names = ", ".join(m.name for m in self.minds)
+        logger.info(f"[tap] Pregunta: '{question[:80]}' | mentes: [{mind_names}]")
+
         context = _build_context(self.minds)
         multi = len(self.minds) > 1
         prompt = _build_tap_prompt(context, question, multi=multi)
 
+        logger.info(f"[tap] Contexto: {len(context):,} chars | prompt total: {len(prompt):,} chars")
+        logger.info("[tap] Enviando al LLM...")
         messages = [
             Message(role="system", content=TAP_SYSTEM),
             Message(role="user", content=prompt),
         ]
         response = self.llm.complete(messages)
+        logger.info(f"[tap] LLM respondió ({response.tokens_used} tokens)")
 
         # Extract detected cross-mind connections from the response
         connections = _extract_connections(response.text)

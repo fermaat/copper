@@ -1,7 +1,8 @@
 {
   "info": {
+    "_postman_id": "copper-api-collection",
     "name": "Copper API",
-    "description": "Mentecobres — AI-maintained knowledge bases.\n\nSet the `base_url` variable to http://localhost:8000 (or your Docker host).",
+    "description": "Mentecobres — AI-maintained knowledge bases. Set the base_url variable to http://localhost:8000.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -13,8 +14,7 @@
     {
       "key": "mind",
       "value": "my-mind",
-      "type": "string",
-      "description": "Name of the coppermind to use in requests"
+      "type": "string"
     }
   ],
   "item": [
@@ -25,54 +25,87 @@
           "name": "List all minds",
           "request": {
             "method": "GET",
-            "url": "{{base_url}}/minds",
-            "description": "Returns all existing copperminds."
-          }
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/minds",
+              "host": ["{{base_url}}"],
+              "path": ["minds"]
+            }
+          },
+          "response": []
         },
         {
           "name": "Forge a mind",
           "request": {
             "method": "POST",
-            "url": "{{base_url}}/minds",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"{{mind}}\",\n  \"topic\": \"artificial intelligence and machine learning\"\n}"
+              "raw": "{\n  \"name\": \"{{mind}}\",\n  \"topic\": \"artificial intelligence and machine learning\"\n}",
+              "options": { "raw": { "language": "json" } }
             },
-            "description": "Creates a new coppermind. Name must be a URL-safe slug."
-          }
+            "url": {
+              "raw": "{{base_url}}/minds",
+              "host": ["{{base_url}}"],
+              "path": ["minds"]
+            }
+          },
+          "response": []
         },
         {
           "name": "Get mind stats",
           "request": {
             "method": "GET",
-            "url": "{{base_url}}/minds/{{mind}}",
-            "description": "Returns stats: raw sources, wiki pages, linked minds."
-          }
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/minds/{{mind}}",
+              "host": ["{{base_url}}"],
+              "path": ["minds", "{{mind}}"]
+            }
+          },
+          "response": []
         },
         {
           "name": "Delete a mind",
           "request": {
             "method": "DELETE",
-            "url": "{{base_url}}/minds/{{mind}}",
-            "description": "Permanently deletes the coppermind and all its data."
-          }
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/minds/{{mind}}",
+              "host": ["{{base_url}}"],
+              "path": ["minds", "{{mind}}"]
+            }
+          },
+          "response": []
         },
         {
           "name": "List wiki pages",
           "request": {
             "method": "GET",
-            "url": "{{base_url}}/minds/{{mind}}/wiki",
-            "description": "Returns a list of all wiki page slugs."
-          }
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/minds/{{mind}}/wiki",
+              "host": ["{{base_url}}"],
+              "path": ["minds", "{{mind}}", "wiki"]
+            }
+          },
+          "response": []
         },
         {
           "name": "Get a wiki page",
           "request": {
             "method": "GET",
-            "url": "{{base_url}}/minds/{{mind}}/wiki/introduction",
-            "description": "Returns the full markdown content of a single wiki page. Replace 'introduction' with the actual slug."
-          }
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/minds/{{mind}}/wiki/introduction",
+              "host": ["{{base_url}}"],
+              "path": ["minds", "{{mind}}", "wiki", "introduction"]
+            },
+            "description": "Replace 'introduction' with the actual page slug."
+          },
+          "response": []
         }
       ]
     },
@@ -83,34 +116,54 @@
           "name": "Link two minds",
           "request": {
             "method": "POST",
-            "url": "{{base_url}}/minds/link",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name_a\": \"{{mind}}\",\n  \"name_b\": \"another-mind\"\n}"
+              "raw": "{\n  \"name_a\": \"{{mind}}\",\n  \"name_b\": \"another-mind\"\n}",
+              "options": { "raw": { "language": "json" } }
             },
-            "description": "Bidirectionally links two copperminds. Tap with --with-links to query both."
-          }
+            "url": {
+              "raw": "{{base_url}}/minds/link",
+              "host": ["{{base_url}}"],
+              "path": ["minds", "link"]
+            }
+          },
+          "response": []
         },
         {
           "name": "Unlink two minds",
           "request": {
             "method": "DELETE",
-            "url": "{{base_url}}/minds/link",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name_a\": \"{{mind}}\",\n  \"name_b\": \"another-mind\"\n}"
+              "raw": "{\n  \"name_a\": \"{{mind}}\",\n  \"name_b\": \"another-mind\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/minds/link",
+              "host": ["{{base_url}}"],
+              "path": ["minds", "link"]
             }
-          }
+          },
+          "response": []
         },
         {
-          "name": "Graph (all links)",
+          "name": "Full link graph",
           "request": {
             "method": "GET",
-            "url": "{{base_url}}/minds/graph/all",
-            "description": "Returns nodes and edges of the full coppermind link graph."
-          }
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/minds/graph/all",
+              "host": ["{{base_url}}"],
+              "path": ["minds", "graph", "all"]
+            }
+          },
+          "response": []
         }
       ]
     },
@@ -121,74 +174,79 @@
           "name": "Store — upload a file",
           "request": {
             "method": "POST",
-            "url": "{{base_url}}/minds/{{mind}}/store",
+            "header": [],
             "body": {
               "mode": "formdata",
               "formdata": [
                 {
                   "key": "file",
                   "type": "file",
-                  "description": "Any supported format: .md, .txt, .pdf, .html, …"
+                  "src": "",
+                  "description": "Select a .md, .txt, .pdf or any text file"
                 }
               ]
             },
-            "description": "Ingest a file into the coppermind. The Archivist reads it and updates the wiki.\n\nIn Postman: Body → form-data → key='file', type=File, select your file."
-          }
+            "url": {
+              "raw": "{{base_url}}/minds/{{mind}}/store",
+              "host": ["{{base_url}}"],
+              "path": ["minds", "{{mind}}", "store"]
+            }
+          },
+          "response": []
         },
         {
           "name": "Tap — ask a question",
           "request": {
             "method": "POST",
-            "url": "{{base_url}}/minds/{{mind}}/tap",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"question\": \"What are the main concepts?\",\n  \"with_links\": false,\n  \"save\": false\n}"
+              "raw": "{\n  \"question\": \"What are the main concepts?\",\n  \"with_links\": false,\n  \"save\": false\n}",
+              "options": { "raw": { "language": "json" } }
             },
-            "description": "Ask a question against the wiki. Set `with_links: true` to include linked minds."
-          }
+            "url": {
+              "raw": "{{base_url}}/minds/{{mind}}/tap",
+              "host": ["{{base_url}}"],
+              "path": ["minds", "{{mind}}", "tap"]
+            }
+          },
+          "response": []
         },
         {
           "name": "Tap — stream (SSE)",
           "request": {
             "method": "POST",
-            "url": "{{base_url}}/minds/{{mind}}/tap/stream",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"question\": \"What are the main concepts?\",\n  \"with_links\": false\n}"
+              "raw": "{\n  \"question\": \"What are the main concepts?\",\n  \"with_links\": false\n}",
+              "options": { "raw": { "language": "json" } }
             },
-            "description": "Streams the answer token by token via Server-Sent Events.\n\nNote: Postman shows the full response when complete. For live streaming, use the UI or curl:\n  curl -N -X POST http://localhost:8000/minds/{{mind}}/tap/stream \\\n    -H 'Content-Type: application/json' \\\n    -d '{\"question\": \"hello\"}'"
-          }
+            "url": {
+              "raw": "{{base_url}}/minds/{{mind}}/tap/stream",
+              "host": ["{{base_url}}"],
+              "path": ["minds", "{{mind}}", "tap", "stream"]
+            },
+            "description": "Returns the full SSE response. For live streaming use the web UI at {{base_url}} or curl -N."
+          },
+          "response": []
         },
         {
           "name": "Polish — wiki health check",
           "request": {
             "method": "POST",
-            "url": "{{base_url}}/minds/{{mind}}/polish",
-            "description": "Runs a full wiki audit: checks for stubs, contradictions, orphan pages, missing citations."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Meta",
-      "item": [
-        {
-          "name": "API docs (Swagger)",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/api/docs",
-            "description": "Interactive Swagger UI — try all endpoints from the browser."
-          }
-        },
-        {
-          "name": "Web UI",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/",
-            "description": "Opens the copper web interface (forge, store, tap, polish)."
-          }
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/minds/{{mind}}/polish",
+              "host": ["{{base_url}}"],
+              "path": ["minds", "{{mind}}", "polish"]
+            }
+          },
+          "response": []
         }
       ]
     }

@@ -20,10 +20,11 @@ COPY pyproject.toml pdm.lock* ./
 # Install main runtime deps from lockfile
 RUN pdm install --no-self --no-editable
 
-# PDM venvs don't ship with pip — bootstrap it, then install the LLM bridge
+# PDM venvs don't ship with pip — bootstrap it, then install optional extras
 RUN /app/.venv/bin/python -m ensurepip --upgrade && \
     /app/.venv/bin/python -m pip install --no-cache-dir \
-    "core-llm-bridge @ git+https://github.com/fermaat/core-llm-bridge.git"
+    "core-llm-bridge @ git+https://github.com/fermaat/core-llm-bridge.git" \
+    pdfplumber
 
 # ------------------------------------------------------------------ #
 # Application stage                                                   #
