@@ -28,7 +28,7 @@ from rich.tree import Tree
 from rich import print as rprint
 
 from copper.core.coppermind import CopperMind
-from copper.llm.base import LLMBase
+from copper.api.deps import get_store_llm, get_tap_llm
 from copper.workflows.store import StoreWorkflow
 from copper.workflows.tap import TapWorkflow
 from copper.workflows.polish import PolishWorkflow
@@ -43,34 +43,6 @@ app = typer.Typer(
 console = Console()
 
 
-# ------------------------------------------------------------------ #
-# LLM loader                                                          #
-# ------------------------------------------------------------------ #
-
-
-def _load_llm() -> LLMBase:
-    """Load the configured LLM backend. Falls back to MockLLM if bridge is unavailable."""
-    from copper.config import settings
-
-    provider_name = settings.copper_llm_provider
-    model = settings.copper_llm_model
-
-    if provider_name == "mock":
-        from copper.llm.mock import MockLLM
-        return MockLLM()
-
-    try:
-        from core_llm_bridge import BridgeEngine
-        from core_llm_bridge.providers import create_provider
-        from copper.llm.bridge_adapter import BridgeAdapter
-
-        provider = create_provider(provider_name, **({"model": model} if model else {}))
-        engine = BridgeEngine(provider=provider)
-        return BridgeAdapter(engine)
-    except ImportError:
-        console.print("[yellow]⚠ core-llm-bridge no encontrado. Usando MockLLM.[/yellow]")
-        from copper.llm.mock import MockLLM
-        return MockLLM()
 
 
 # ------------------------------------------------------------------ #
@@ -116,7 +88,7 @@ def store(
         console.print(f"[red]✗ {e}[/red]")
         raise typer.Exit(1)
 
-    llm = _load_llm()
+    llm = get_store_llm(mind)
     workflow = StoreWorkflow(mind, llm)
 
     sources: list[Path] = []
@@ -186,7 +158,7 @@ def tap(
             console.print(f"[dim]+ Mentecobres enlazadas: {', '.join(m.name for m in extra)}[/dim]")
             minds = minds + extra
 
-    llm = _load_llm()
+    llm = get_tap_llm(minds[0])
     workflow = TapWorkflow(minds, llm)
 
     mind_list = ", ".join(m.name for m in minds)
@@ -220,7 +192,7 @@ def polish(
         console.print(f"[red]✗ {e}[/red]")
         raise typer.Exit(1)
 
-    llm = _load_llm()
+    llm = get_store_llm(mind)
     workflow = PolishWorkflow(mind, llm)
 
     with console.status("[cyan]El Archivista inspecciona la mentecobre...[/cyan]"):
@@ -321,7 +293,7 @@ def chat(
         if extra:
             minds = minds + extra
 
-    llm = _load_llm()
+    llm = get_tap_llm(minds[0])
     workflow = TapWorkflow(minds, llm)
     mind_list = ", ".join(m.name for m in minds)
 
@@ -441,7 +413,7 @@ def watch(
         console.print(f"[red]✗ {e}[/red]")
         raise typer.Exit(1)
 
-    llm = _load_llm()
+    llm = get_store_llm(mind)
 
     console.print(Panel(
         f"[bold]Mentecobre:[/bold] [cyan]{name}[/cyan]\n"

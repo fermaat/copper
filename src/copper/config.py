@@ -38,9 +38,19 @@ class Settings(CoreSettings):
         "env_file_encoding": "utf-8",
     }
 
-    # ── LLM — provider selection ────────────────────────────────────
+    # ── LLM — generic (fallback for all workflows) ──────────────────
     copper_llm_provider: str = "mock"   # mock | ollama | anthropic | openai
     copper_llm_model: str = ""          # passed to the provider; empty = provider default
+
+    # ── LLM — store + polish (override generic) ─────────────────────
+    # Used when building/updating the wiki. Typically a more capable model.
+    copper_store_provider: str = ""     # empty = fall back to copper_llm_provider
+    copper_store_model: str = ""        # empty = fall back to copper_llm_model
+
+    # ── LLM — tap + chat (override generic) ─────────────────────────
+    # Used when querying the wiki. Can be a faster/cheaper/local model.
+    copper_tap_provider: str = ""       # empty = fall back to copper_llm_provider
+    copper_tap_model: str = ""          # empty = fall back to copper_llm_model
 
     # ── LLM — Ollama ────────────────────────────────────────────────
     copper_ollama_base_url: str = "http://localhost:11434"

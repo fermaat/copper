@@ -174,8 +174,12 @@ cp .env.example .env
 
 | Variable | Default | Description |
 |---|---|---|
-| `COPPER_LLM_PROVIDER` | `mock` | LLM provider: `mock`, `ollama`, `anthropic`, `openai` |
-| `COPPER_LLM_MODEL` | _(empty)_ | Model name (e.g. `llama3.2`, `claude-sonnet-4-6`) |
+| `COPPER_LLM_PROVIDER` | `mock` | Fallback provider: `mock`, `ollama`, `anthropic`, `openai` |
+| `COPPER_LLM_MODEL` | _(empty)_ | Fallback model name |
+| `COPPER_STORE_PROVIDER` | _(empty)_ | Provider for store + polish (overrides fallback) |
+| `COPPER_STORE_MODEL` | _(empty)_ | Model for store + polish |
+| `COPPER_TAP_PROVIDER` | _(empty)_ | Provider for tap + chat (overrides fallback) |
+| `COPPER_TAP_MODEL` | _(empty)_ | Model for tap + chat |
 | `COPPER_MINDS_DIR` | `~/.copper/minds` | Where copperminds are stored |
 | `COPPER_HOST` | `127.0.0.1` | API server host |
 | `COPPER_PORT` | `8000` | API server port |
@@ -186,9 +190,38 @@ cp .env.example .env
 | `COPPER_ANTHROPIC_API_KEY` | _(empty)_ | Anthropic API key |
 | `COPPER_OPENAI_API_KEY` | _(empty)_ | OpenAI API key |
 
-All provider credentials are declared in copper's own `.env` and passed explicitly to the LLM provider — no ambient environment reading by dependencies.
-
 By default, `COPPER_LLM_PROVIDER=mock` — no real LLM calls are made.
+
+### Using different models for store vs. tap
+
+Store (ingestion) benefits from a more capable model; tap (queries) can use a faster local one. Configure them independently:
+
+```bash
+# .env — index with Claude, query with Ollama
+COPPER_STORE_PROVIDER=anthropic
+COPPER_STORE_MODEL=claude-opus-4-6
+COPPER_ANTHROPIC_API_KEY=sk-ant-...
+
+COPPER_TAP_PROVIDER=ollama
+COPPER_TAP_MODEL=llama3.2
+COPPER_OLLAMA_BASE_URL=http://localhost:11434
+```
+
+Resolution order for each workflow: **per-mind override → workflow-level env var → generic fallback**.
+
+### Overriding models per coppermind
+
+Edit `.copper/config.yaml` inside the coppermind folder:
+
+```yaml
+# ~/.copper/minds/my-mind/.copper/config.yaml
+store_provider: anthropic
+store_model: claude-sonnet-4-6
+tap_provider: ollama
+tap_model: gemma3:4b
+```
+
+Only set the fields you want to override — absent fields inherit from the global config.
 
 ---
 

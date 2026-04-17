@@ -24,15 +24,30 @@ class CopperMindConfig:
     created: str
     model: str = "default"
     linked_minds: list[str] = field(default_factory=list)
+    # Per-mind LLM overrides (empty string = use global settings)
+    store_provider: str = ""
+    store_model: str = ""
+    tap_provider: str = ""
+    tap_model: str = ""
 
     def to_dict(self) -> dict:
-        return {
+        d: dict = {
             "name": self.name,
             "topic": self.topic,
             "created": self.created,
             "model": self.model,
             "linked_minds": self.linked_minds,
         }
+        # Only write override fields when set, to keep config.yaml clean
+        if self.store_provider:
+            d["store_provider"] = self.store_provider
+        if self.store_model:
+            d["store_model"] = self.store_model
+        if self.tap_provider:
+            d["tap_provider"] = self.tap_provider
+        if self.tap_model:
+            d["tap_model"] = self.tap_model
+        return d
 
     @classmethod
     def from_dict(cls, data: dict) -> "CopperMindConfig":
@@ -42,6 +57,10 @@ class CopperMindConfig:
             created=data["created"],
             model=data.get("model", "default"),
             linked_minds=data.get("linked_minds", []),
+            store_provider=data.get("store_provider", ""),
+            store_model=data.get("store_model", ""),
+            tap_provider=data.get("tap_provider", ""),
+            tap_model=data.get("tap_model", ""),
         )
 
 

@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 
-from copper.api.deps import get_llm
+from copper.api.deps import get_store_llm, get_tap_llm
 from copper.api.models import PolishResponse, StoreResponse, TapRequest, TapResponse
 from copper.api.routes.minds import _get_or_404
 from copper.core.coppermind import CopperMind
-from copper.llm.base import LLMBase
 from copper.workflows.polish import PolishWorkflow
 from copper.workflows.store import StoreWorkflow
 from copper.workflows.tap import TapWorkflow
@@ -28,10 +27,10 @@ router = APIRouter(prefix="/minds", tags=["workflows"])
 async def store(
     name: str,
     file: UploadFile = File(...),
-    llm: LLMBase = Depends(get_llm),
 ):
     """Upload a file and ingest it into the coppermind."""
     mind = _get_or_404(name)
+    llm = get_store_llm(mind)
     workflow = StoreWorkflow(mind, llm)
 
     # Save directly to raw/ under the original filename so StoreWorkflow
@@ -59,10 +58,10 @@ async def store(
 def tap(
     name: str,
     body: TapRequest,
-    llm: LLMBase = Depends(get_llm),
 ):
     """Query a coppermind (and optionally its linked minds)."""
     mind = _get_or_404(name)
+    llm = get_tap_llm(mind)
     minds = mind.expand_with_links() if body.with_links else [mind]
     workflow = TapWorkflow(minds, llm)
     result = workflow.run(body.question, save_to_outputs=body.save)
@@ -81,13 +80,13 @@ def tap(
 def tap_stream(
     name: str,
     body: TapRequest,
-    llm: LLMBase = Depends(get_llm),
 ):
     """Stream a tap response token by token via Server-Sent Events."""
     from copper.workflows.tap import _build_context, _build_tap_prompt
     from copper.llm.base import Message
 
     mind = _get_or_404(name)
+    llm = get_tap_llm(mind)
     minds = mind.expand_with_links() if body.with_links else [mind]
 
     context = _build_context(minds)
@@ -114,10 +113,10 @@ def tap_stream(
 @router.post("/{name}/polish", response_model=PolishResponse)
 def polish(
     name: str,
-    llm: LLMBase = Depends(get_llm),
 ):
     """Run a health check on a coppermind's wiki."""
     mind = _get_or_404(name)
+    llm = get_store_llm(mind)
     workflow = PolishWorkflow(mind, llm)
     result = workflow.run()
 
