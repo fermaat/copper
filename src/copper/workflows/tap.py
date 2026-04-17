@@ -72,6 +72,7 @@ class TapWorkflow:
             answer=response.text,
             minds_used=[m.name for m in self.minds],
             tokens_used=response.tokens_used,
+            cost_usd=response.cost_usd,
             saved_to=saved_to,
             connections=connections,
         )
@@ -146,11 +147,13 @@ class TapResult:
         tokens_used: int,
         saved_to: list[Path],
         connections: list[str] | None = None,
+        cost_usd: float = 0.0,
     ):
         self.question = question
         self.answer = answer
         self.minds_used = minds_used
         self.tokens_used = tokens_used
+        self.cost_usd = cost_usd
         self.saved_to = saved_to
         self.connections = connections or []
 
@@ -158,5 +161,5 @@ class TapResult:
         return (
             f"TapResult(minds={self.minds_used}, "
             f"connections={len(self.connections)}, "
-            f"tokens={self.tokens_used}, saved={len(self.saved_to)})"
+            f"tokens={self.tokens_used}, cost=${self.cost_usd:.6f}, saved={len(self.saved_to)})"
         )

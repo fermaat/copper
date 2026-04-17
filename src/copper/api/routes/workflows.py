@@ -46,6 +46,7 @@ async def store(
         source=result.source,
         pages_written=result.pages_written,
         tokens_used=result.tokens_used,
+        cost_usd=result.cost_usd,
     )
 
 
@@ -73,6 +74,7 @@ def tap(
         connections=result.connections,
         tokens_used=result.tokens_used,
         saved_to=[str(p) for p in result.saved_to],
+        cost_usd=result.cost_usd,
     )
 
 
@@ -125,6 +127,7 @@ def polish(
         report=result.report_text,
         structural_issues=result.structural_issues,
         tokens_used=result.tokens_used,
+        cost_usd=result.cost_usd,
     )
 
 

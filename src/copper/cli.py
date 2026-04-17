@@ -121,9 +121,10 @@ def store(
                 console.print(f"[red]✗ {e}[/red]")
                 continue
 
+        cost_str = f" · [dim]${result.cost_usd:.4f}[/dim]" if result.cost_usd else ""
         console.print(
             f"[green]✓[/green] [bold]{src.name}[/bold] almacenado → "
-            f"[cyan]{len(result.pages_written)}[/cyan] páginas wiki actualizadas"
+            f"[cyan]{len(result.pages_written)}[/cyan] páginas wiki actualizadas{cost_str}"
         )
         if result.pages_written:
             for p in result.pages_written:
@@ -180,6 +181,9 @@ def tap(
         for path in result.saved_to:
             console.print(f"[dim]💾 Guardado en: {path}[/dim]")
 
+    if result.cost_usd:
+        console.print(f"[dim]💰 Coste: ${result.cost_usd:.4f}[/dim]")
+
 
 @app.command()
 def polish(
@@ -209,7 +213,8 @@ def polish(
         for issue in result.structural_issues:
             console.print(f"  {issue}")
 
-    console.print(f"\n[dim]Informe guardado en: {result.report_path}[/dim]")
+    cost_str = f" · ${result.cost_usd:.4f}" if result.cost_usd else ""
+    console.print(f"\n[dim]Informe guardado en: {result.report_path}{cost_str}[/dim]")
 
 
 @app.command(name="list")
@@ -425,9 +430,10 @@ def watch(
     ))
 
     def _on_result(path: Path, result: StoreResult) -> None:
+        cost_str = f" · [dim]${result.cost_usd:.4f}[/dim]" if result.cost_usd else ""
         console.print(
             f"[green]✓[/green] [bold]{result.source}[/bold] almacenado → "
-            f"[cyan]{len(result.pages_written)}[/cyan] páginas wiki actualizadas"
+            f"[cyan]{len(result.pages_written)}[/cyan] páginas wiki actualizadas{cost_str}"
         )
         for p in result.pages_written:
             console.print(f"  [dim]· {p}[/dim]")

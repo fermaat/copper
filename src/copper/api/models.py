@@ -45,6 +45,7 @@ class StoreResponse(BaseModel):
     source: str
     pages_written: list[str]
     tokens_used: int
+    cost_usd: float = 0.0
 
 
 class TapResponse(BaseModel):
@@ -54,6 +55,7 @@ class TapResponse(BaseModel):
     connections: list[str]
     tokens_used: int
     saved_to: list[str]
+    cost_usd: float = 0.0
 
 
 class PolishResponse(BaseModel):
@@ -61,6 +63,7 @@ class PolishResponse(BaseModel):
     report: str
     structural_issues: list[str]
     tokens_used: int
+    cost_usd: float = 0.0
 
 
 class GraphNode(BaseModel):

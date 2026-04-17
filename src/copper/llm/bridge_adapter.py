@@ -36,6 +36,7 @@ class BridgeAdapter(LLMBase):
         return LLMResponse(
             text=response.text,
             tokens_used=response.tokens_used or 0,
+            cost_usd=response.cost_usd or 0.0,
             metadata=response.metadata or {},
         )
 

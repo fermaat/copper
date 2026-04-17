@@ -16,6 +16,7 @@ from typing import Generator
 class LLMResponse:
     text: str
     tokens_used: int = 0
+    cost_usd: float = 0.0
     metadata: dict = field(default_factory=dict)
 
 

@@ -64,6 +64,7 @@ class PolishWorkflow:
             report_text=response.text,
             structural_issues=structural,
             tokens_used=response.tokens_used,
+            cost_usd=response.cost_usd,
         )
 
 
@@ -130,15 +131,17 @@ class PolishResult:
         report_text: str,
         structural_issues: list[str],
         tokens_used: int,
+        cost_usd: float = 0.0,
     ):
         self.mind_name = mind_name
         self.report_path = report_path
         self.report_text = report_text
         self.structural_issues = structural_issues
         self.tokens_used = tokens_used
+        self.cost_usd = cost_usd
 
     def __repr__(self) -> str:
         return (
             f"PolishResult(mind={self.mind_name!r}, "
-            f"issues={len(self.structural_issues)}, tokens={self.tokens_used})"
+            f"issues={len(self.structural_issues)}, tokens={self.tokens_used}, cost=${self.cost_usd:.6f})"
         )

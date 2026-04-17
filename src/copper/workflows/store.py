@@ -62,6 +62,7 @@ class StoreWorkflow:
         schema = self.mind.schema()
         all_pages: list[str] = []
         total_tokens = 0
+        total_cost = 0.0
 
         for i, chunk in enumerate(chunks, 1):
             chunk_label = f"parte {i}/{total_chunks}" if total_chunks > 1 else None
@@ -84,6 +85,7 @@ class StoreWorkflow:
             ]
             response = self.llm.complete(messages)
             total_tokens += response.tokens_used
+            total_cost += response.cost_usd
             logger.info(f"[store] LLM respondió ({response.tokens_used} tokens)")
 
             pages = _apply_wiki_updates(response.text, source_name, self.wiki)
@@ -102,6 +104,7 @@ class StoreWorkflow:
             from copper.workflows.polish import PolishWorkflow
             polish_result = PolishWorkflow(self.mind, self.llm).run()
             total_tokens += polish_result.tokens_used
+            total_cost += polish_result.cost_usd
             logger.info(
                 f"[store] Polish completado → {len(polish_result.structural_issues)} issues estructurales, "
                 f"informe en {polish_result.report_path.name}"
@@ -111,6 +114,7 @@ class StoreWorkflow:
             source=source_name,
             pages_written=all_pages,
             tokens_used=total_tokens,
+            cost_usd=total_cost,
         )
 
 
@@ -200,10 +204,11 @@ def _apply_wiki_updates(llm_output: str, source_name: str, wiki: WikiManager) ->
 
 
 class StoreResult:
-    def __init__(self, source: str, pages_written: list[str], tokens_used: int):
+    def __init__(self, source: str, pages_written: list[str], tokens_used: int, cost_usd: float = 0.0):
         self.source = source
         self.pages_written = pages_written
         self.tokens_used = tokens_used
+        self.cost_usd = cost_usd
 
     def __repr__(self) -> str:
-        return f"StoreResult(source={self.source!r}, pages={len(self.pages_written)}, tokens={self.tokens_used})"
+        return f"StoreResult(source={self.source!r}, pages={len(self.pages_written)}, tokens={self.tokens_used}, cost=${self.cost_usd:.6f})"
