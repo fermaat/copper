@@ -50,7 +50,7 @@ class StoreWorkflow:
             shutil.copy2(source_path, raw_path)
 
         source_name = raw_path.name
-        logger.info(f"[store] Extrayendo texto de '{source_name}'...")
+        logger.info(f"[store] Extracting text from '{source_name}'...")
 
         registry = default_registry()
         chunks = registry.to_chunks(raw_path, MAX_CHUNK_CHARS, llm=self.llm)
@@ -67,7 +67,7 @@ class StoreWorkflow:
         for i, chunk in enumerate(chunks, 1):
             chunk_label = f"parte {i}/{total_chunks}" if total_chunks > 1 else None
             if chunk_label:
-                logger.info(f"[store] Procesando fragmento {i}/{total_chunks} ({len(chunk):,} chars)...")
+                logger.info(f"[store] Processing chunk {i}/{total_chunks} ({len(chunk):,} chars)...")
 
             # Refresh index each iteration so the LLM sees pages created by previous chunks
             index_content = self.wiki.read_index()
@@ -78,7 +78,7 @@ class StoreWorkflow:
                 existing_slugs=existing_slugs,
             )
 
-            logger.info(f"[store] Enviando al LLM ({len(prompt):,} chars en el prompt)...")
+            logger.info(f"[store] Sending to LLM ({len(prompt):,} chars in prompt)...")
             messages = [
                 Message(role="system", content=STORE_SYSTEM),
                 Message(role="user", content=prompt),
@@ -86,28 +86,28 @@ class StoreWorkflow:
             response = self.llm.complete(messages)
             total_tokens += response.tokens_used
             total_cost += response.cost_usd
-            logger.info(f"[store] LLM respondió ({response.tokens_used} tokens)")
+            logger.info(f"[store] LLM responded ({response.tokens_used} tokens)")
 
             pages = _apply_wiki_updates(response.text, source_name, self.wiki)
             all_pages.extend(pages)
-            logger.info(f"[store] Fragmento {i}/{total_chunks}: {len(pages)} página(s) → {pages}")
+            logger.info(f"[store] Chunk {i}/{total_chunks}: {len(pages)} page(s) written → {pages}")
 
         self.mind.append_log(
             "store",
             f"Fuente '{source_name}' almacenada → {len(all_pages)} páginas actualizadas",
         )
-        logger.info(f"[store] Completado: '{source_name}' → {len(all_pages)} páginas, {total_tokens} tokens")
+        logger.info(f"[store] Done: '{source_name}' → {len(all_pages)} pages, {total_tokens} tokens")
 
         # After multi-chunk ingestion, run polish to consolidate duplicates and fix gaps
         if total_chunks > 1:
-            logger.info(f"[store] Lanzando polish de consolidación ({len(all_pages)} páginas en el wiki)...")
+            logger.info(f"[store] Running consolidation polish ({len(all_pages)} wiki pages)...")
             from copper.workflows.polish import PolishWorkflow
             polish_result = PolishWorkflow(self.mind, self.llm).run()
             total_tokens += polish_result.tokens_used
             total_cost += polish_result.cost_usd
             logger.info(
-                f"[store] Polish completado → {len(polish_result.structural_issues)} issues estructurales, "
-                f"informe en {polish_result.report_path.name}"
+                f"[store] Polish done → {len(polish_result.structural_issues)} structural issues, "
+                f"report at {polish_result.report_path.name}"
             )
 
         return StoreResult(
@@ -195,7 +195,7 @@ def _apply_wiki_updates(llm_output: str, source_name: str, wiki: WikiManager) ->
         wiki.update_index(index_match.group(1).strip())
 
     if not pages_written:
-        logger.warning(f"[store] El LLM no devolvió XML válido — creando página de resumen")
+        logger.warning(f"[store] LLM returned no valid XML — creating summary page")
         slug = source_name.replace(".", "-").lower()
         wiki.upsert_page(slug=slug, title=f"Resumen: {source_name}", body=llm_output)
         pages_written.append(slug)
