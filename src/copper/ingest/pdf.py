@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from core_utils.logger import logger
+
 from copper.ingest.base import IngestPlugin, naive_split
 
 
@@ -63,20 +65,28 @@ class PDFPlugin(IngestPlugin):
             return [f"<!-- PDF '{path.name}' contains no extractable text -->"]
 
         full_text = "\n\n---\n\n".join(f"<!-- Page {i} -->\n\n{text}" for i, text in pages)
+        logger.info(f"[pdf] Full text: {len(full_text):,} chars across {len(pages)} pages")
 
         # Strategy A: locate TOC page and split at section titles
+        logger.info("[pdf] Strategy A: scanning for TOC...")
         chunks = self._chunks_from_toc(pages, full_text, max_chars)
         if chunks:
+            logger.info(f"[pdf] TOC split → {len(chunks)} chunks")
             return chunks
 
         # Strategy B: ask LLM to identify section boundaries
         if llm is not None:
+            logger.info("[pdf] Strategy B: asking LLM for section boundaries...")
             chunks = self._chunks_from_llm(full_text, max_chars, llm)
             if chunks:
+                logger.info(f"[pdf] LLM split → {len(chunks)} chunks")
                 return chunks
 
         # Strategy C: naive character-based split
-        return naive_split(full_text, max_chars)
+        logger.info("[pdf] Strategy C: naive character split")
+        chunks = naive_split(full_text, max_chars)
+        logger.info(f"[pdf] Naive split → {len(chunks)} chunks")
+        return chunks
 
     # ------------------------------------------------------------------ #
     # Internal helpers                                                    #
@@ -92,10 +102,14 @@ class PDFPlugin(IngestPlugin):
             )
         result: list[tuple[int, str]] = []
         with pdfplumber.open(path) as pdf:
+            total = len(pdf.pages)
+            logger.info(f"[pdf] Opening '{path.name}' — {total} pages")
             for i, page in enumerate(pdf.pages, 1):
                 text = page.extract_text()
                 if text and text.strip():
                     result.append((i, text.strip()))
+                if i % 50 == 0 or i == total:
+                    logger.info(f"[pdf] Extracted {i}/{total} pages ({len(result)} with text)...")
         return result
 
     def _chunks_from_toc(

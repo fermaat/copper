@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from loguru import logger
+from core_utils.logger import logger
 
 from copper.core.coppermind import CopperMind
 from copper.core.wiki import WikiManager
