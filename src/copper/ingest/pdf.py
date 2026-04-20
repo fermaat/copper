@@ -124,7 +124,12 @@ class PDFPlugin(IngestPlugin):
         titles = self._parse_toc_titles(toc_text)
         if not titles:
             return []
-        return self._split_by_titles(full_text, titles, max_chars)
+        # Skip past the TOC page when searching for anchors — otherwise every
+        # title is found inside the TOC itself, producing dozens of tiny chunks.
+        toc_anchor = full_text.lower().find(toc_text[:80].lower())
+        search_offset = toc_anchor + len(toc_text) if toc_anchor != -1 else 0
+        logger.info(f"[pdf] TOC found: {len(titles)} titles, searching from offset {search_offset:,}")
+        return self._split_by_titles(full_text, titles, max_chars, search_offset=search_offset)
 
     def _find_toc_page(self, pages: list[tuple[int, str]]) -> str | None:
         """Return the text of the first TOC-like page found in the opening pages."""
@@ -149,22 +154,23 @@ class PDFPlugin(IngestPlugin):
         return titles
 
     def _split_by_titles(
-        self, full_text: str, titles: list[str], max_chars: int
+        self, full_text: str, titles: list[str], max_chars: int, search_offset: int = 0
     ) -> list[str]:
         """Locate title anchors in full_text and use them as split boundaries."""
         text_lower = full_text.lower()
+        search_lower = text_lower[search_offset:]
         anchors: list[int] = []
 
         for title in titles:
             needle = title.lower()
             # Prefer a match at the start of a line
-            pos = text_lower.find("\n" + needle)
+            pos = search_lower.find("\n" + needle)
             if pos != -1:
                 pos += 1  # skip the leading newline
             else:
-                pos = text_lower.find(needle)
+                pos = search_lower.find(needle)
             if pos != -1:
-                anchors.append(pos)
+                anchors.append(search_offset + pos)
 
         if len(anchors) < 2:
             return []

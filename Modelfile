@@ -1,0 +1,7 @@
+FROM gemma3:4b
+
+# Extended context window for wiki ingestion.
+# Default is 8K — at 32K the full index + slugs + chunk content fits comfortably
+# without truncation, even on large documents (300-500 pages).
+# On M4 Pro 64 GB this uses ~5 GB RAM via the Neural Engine.
+PARAMETER num_ctx 32768
