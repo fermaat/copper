@@ -98,16 +98,26 @@ label { font-size: 0.7rem; color: var(--text-dim); display: block; margin-bottom
 
 /* Wiki pages list */
 .wiki-page { padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.8rem; color: var(--text-dim); }
-.wiki-page:hover { color: var(--copper-light); cursor: pointer; }
+.wiki-page-link { cursor: pointer; }
+.wiki-page-link:hover { color: var(--copper-light); text-decoration: underline; }
 
-/* Forge modal */
+/* Modals */
 .modal-overlay {
   display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
   z-index: 100; align-items: center; justify-content: center;
 }
 .modal-overlay.open { display: flex; }
 .modal { background: var(--bg-card); border: 1px solid var(--copper-dark); border-radius: 6px; padding: 2rem; width: 400px; }
-.modal-title { color: var(--copper); margin-bottom: 1.5rem; font-size: 1rem; }
+.modal-wide { width: min(800px, 92vw); max-height: 85vh; display: flex; flex-direction: column; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.modal-title { color: var(--copper); font-size: 1rem; }
+.page-content { overflow-y: auto; flex: 1; font-size: 0.85rem; line-height: 1.7; color: var(--text); }
+.page-content h1, .page-content h2, .page-content h3 { color: var(--copper-light); margin-top: 1.2rem; margin-bottom: 0.4rem; }
+.page-content p { margin-bottom: 0.6rem; }
+.page-content ul, .page-content ol { padding-left: 1.4rem; margin-bottom: 0.6rem; }
+.page-content code { background: var(--bg); padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.8rem; }
+.page-content pre { background: var(--bg); padding: 0.8rem; border-radius: 4px; overflow-x: auto; margin-bottom: 0.6rem; }
+.page-content blockquote { border-left: 3px solid var(--copper-dark); padding-left: 0.8rem; color: var(--text-dim); margin: 0.5rem 0; }
 
 /* HTMX indicator */
 .htmx-indicator { display: none; color: var(--copper); font-size: 0.75rem; }

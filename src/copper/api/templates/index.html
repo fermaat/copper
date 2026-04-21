@@ -6,6 +6,7 @@
   <title>Copper — Mentecobres</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
   <div class="layout">
@@ -104,6 +105,17 @@
     </main>
   </div>
 
+  <!-- Page viewer modal -->
+  <div class="modal-overlay" id="page-modal">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <div class="modal-title" id="page-modal-title">—</div>
+        <button class="btn btn-ghost btn-sm" onclick="closePageModal()">✕ Close</button>
+      </div>
+      <div id="page-modal-body" class="page-content"></div>
+    </div>
+  </div>
+
   <!-- Forge modal -->
   <div class="modal-overlay" id="forge-modal">
     <div class="modal">
@@ -153,7 +165,7 @@
 
       // Wiki pages list
       document.getElementById('wiki-pages-list').innerHTML = pages.length
-        ? pages.map(p => `<div class="wiki-page">· ${p}</div>`).join('')
+        ? pages.map(p => `<div class="wiki-page wiki-page-link" onclick="showPage('${p}')" title="Click to read">· ${p}</div>`).join('')
         : '<span class="text-dim">No pages yet. Store a source first.</span>';
 
       // Reset result panels
@@ -314,6 +326,35 @@
         document.getElementById('forge-topic').value = '';
       }
     }
+
+    // ----------------------------------------------------------------
+    // Page viewer
+    // ----------------------------------------------------------------
+    async function showPage(slug) {
+      if (!currentMind) return;
+      const modal = document.getElementById('page-modal');
+      const titleEl = document.getElementById('page-modal-title');
+      const bodyEl = document.getElementById('page-modal-body');
+
+      titleEl.textContent = slug;
+      bodyEl.innerHTML = '<span class="text-dim">Loading…</span>';
+      modal.classList.add('open');
+
+      const res = await fetch(`/minds/${currentMind}/wiki/${slug}`);
+      if (!res.ok) { bodyEl.textContent = 'Page not found.'; return; }
+      const data = await res.json();
+
+      titleEl.textContent = data.frontmatter?.title || slug;
+      bodyEl.innerHTML = marked.parse(data.content);
+    }
+
+    function closePageModal() {
+      document.getElementById('page-modal').classList.remove('open');
+    }
+
+    document.getElementById('page-modal').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closePageModal();
+    });
 
     // Close modal on overlay click
     document.getElementById('forge-modal').addEventListener('click', (e) => {

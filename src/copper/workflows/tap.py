@@ -17,16 +17,19 @@ from copper.llm.base import LLMBase, LLMResponse, Message
 
 
 TAP_SYSTEM = """\
-Eres el Archivista de una o varias mentecobres. Respondes preguntas basándote
-exclusivamente en el contenido del wiki compilado. Citas las páginas del wiki
-que informan tu respuesta con [Fuente: nombre-pagina].
+You are the Archivist of one or more copperminds. You answer questions based
+exclusively on the compiled wiki content. Cite the wiki pages that inform
+your answer with [Source: page-name].
 
-Cuando consultas varias mentecobres:
-- Busca activamente conexiones, paralelismos o contradicciones entre ellas.
-- Marca las conexiones encontradas con [Conexión: mente-a ↔ mente-b: descripción].
-- Si la pregunta sólo aplica a algunas mentes, indícalo claramente.
+Give thorough, detailed answers. Synthesize information across multiple pages
+when relevant. Do not truncate or summarise unnecessarily.
 
-Si la respuesta revela insights nuevos, ofreces guardarlos en el wiki.
+When consulting multiple copperminds:
+- Actively look for connections, parallels, or contradictions between them.
+- Mark found connections with [Connection: mind-a ↔ mind-b: description].
+- If the question only applies to some minds, state this clearly.
+
+If your answer reveals new insights, offer to save them to the wiki.
 """
 
 _SELECT_SYSTEM = """\
@@ -81,6 +84,7 @@ class TapWorkflow:
         total_tokens += response.tokens_used
         total_cost += response.cost_usd
         logger.info(f"[tap] LLM responded ({response.tokens_used} tokens)")
+        logger.info(f"[tap] Answer preview: {response.text[:300].replace(chr(10), ' ')}")
 
         connections = _extract_connections(response.text)
 
@@ -113,8 +117,10 @@ def _select_pages(
 ## Question
 {question}
 
-List the slugs of pages relevant to answering this question.
-One per line, prefixed with "PAGE: ". List at most {_MAX_PAGES} pages.
+List the slugs of ALL pages that contain information relevant to answering this question.
+One slug per line, prefixed with "PAGE: ". Include every page that could contribute
+to a thorough answer — err on the side of including more rather than fewer.
+Hard limit: {_MAX_PAGES} pages.
 """
     messages = [
         Message(role="system", content=_SELECT_SYSTEM),
@@ -168,28 +174,28 @@ def _build_context(minds: list[CopperMind], selected: dict[str, list[str]]) -> s
 
 def _build_tap_prompt(context: str, question: str, multi: bool = False) -> str:
     cross_mind_instructions = (
-        "\n\nEstás consultando VARIAS mentecobres. Además de responder, busca activamente:\n"
-        "- Conceptos compartidos entre mentes distintas\n"
-        "- Contradicciones o tensiones entre ellas\n"
-        "- Conexiones no obvias que enriquezcan la respuesta\n"
-        "Márcalas como: [Conexión: mente-a ↔ mente-b: descripción breve]\n"
+        "\n\nYou are consulting MULTIPLE copperminds. In addition to answering, actively look for:\n"
+        "- Concepts shared across different minds\n"
+        "- Contradictions or tensions between them\n"
+        "- Non-obvious connections that enrich the answer\n"
+        "Mark them as: [Connection: mind-a ↔ mind-b: brief description]\n"
     ) if multi else ""
 
     return f"""\
-## Contenido del wiki
+## Wiki content
 {context}
 ---
-## Pregunta
+## Question
 {question}{cross_mind_instructions}
-Responde basándote únicamente en el contenido del wiki anterior.
-Cita las páginas que usas con [Fuente: nombre-pagina].
+Answer based solely on the wiki content above.
+Cite the pages you use with [Source: page-name].
 """
 
 
 def _extract_connections(text: str) -> list[str]:
-    """Parse [Conexión: ...] markers from the LLM response."""
+    """Parse [Connection: ...] markers from the LLM response."""
     import re
-    return re.findall(r"\[Conexión:[^\]]+\]", text)
+    return re.findall(r"\[Connection:[^\]]+\]", text)
 
 
 def _save_to_outputs(question: str, response: LLMResponse, minds: list[CopperMind]) -> list[Path]:

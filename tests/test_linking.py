@@ -136,7 +136,7 @@ class TestCrossMindTap:
         alpha, beta = two_minds
         answer = (
             "Los transformers usan atención. [Fuente: transformers]\n"
-            "[Conexión: alpha ↔ beta: ambas usan mecanismos de memoria]"
+            "[Connection: alpha ↔ beta: both use memory mechanisms]"
         )
         llm = MockLLM([answer])
         workflow = TapWorkflow([alpha, beta], llm)
@@ -161,8 +161,8 @@ class TestCrossMindTap:
         from copper.workflows.tap import _build_tap_prompt
 
         prompt = _build_tap_prompt("contexto", "pregunta", multi=True)
-        assert "VARIAS mentecobres" in prompt
-        assert "Conexión" in prompt
+        assert "MULTIPLE copperminds" in prompt
+        assert "Connection" in prompt
 
     def test_tap_single_prompt_no_cross_mind_instructions(self, two_minds):
         from copper.workflows.tap import _build_tap_prompt
