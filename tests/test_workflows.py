@@ -131,7 +131,8 @@ class TestTapWorkflow:
         result = workflow.run("pregunta")
 
         assert set(result.minds_used) == {"mente-a", "mente-b"}
-        assert llm._call_count == 1  # Single LLM call with combined context
+        # 2 phase-1 selection calls (one per mind) + 1 phase-2 answer call
+        assert llm._call_count == 3
 
     def test_tap_save_to_outputs(self, mind):
         from copper.workflows.tap import TapWorkflow
