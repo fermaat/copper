@@ -32,6 +32,9 @@ class BridgeAdapter(LLMBase):
         # Only send the last user message; history is managed by BridgeEngine
         user_input = user_messages[-1].content
         response = self._engine.chat(user_input)
+        # Clear history after each call — copper passes full context in every prompt,
+        # so accumulated history would only bloat subsequent requests with stale data.
+        self._engine.clear_history()
 
         return LLMResponse(
             text=response.text,

@@ -131,12 +131,12 @@ def _build_store_prompt(
 
     update_note = ""
     if existing_slugs and chunk_label:
-        slugs_list = "\n".join(f"- {s}" for s in existing_slugs)
+        slugs_str = ", ".join(existing_slugs)
         update_note = (
-            f"\n## Páginas ya existentes en el wiki\n{slugs_list}\n\n"
-            "> IMPORTANTE: Si el contenido de este fragmento es relevante para una página ya existente, "
-            "ACTUALÍZALA (action=\"update\") en lugar de crear una página nueva. "
-            "Solo crea páginas nuevas para conceptos que no tengan página equivalente.\n"
+            f"\n## Páginas ya existentes en el wiki ({len(existing_slugs)} total)\n{slugs_str}\n\n"
+            "> IMPORTANTE: Solo toca las páginas DIRECTAMENTE relevantes para este fragmento. "
+            "Actualiza (action=\"update\") si ya existe; crea (action=\"create\") si no. "
+            "No toques páginas no relacionadas con este fragmento.\n"
         )
 
     return f"""\
@@ -167,7 +167,7 @@ Devuelve las actualizaciones del wiki en el siguiente formato XML:
 </wiki_updates>
 
 Importante:
-- Incluye entre 3 y 15 páginas
+- Incluye entre 1 y 5 páginas (solo las más relevantes para este fragmento)
 - El slug debe ser kebab-case y descriptivo
 - Añade [[backlinks]] donde corresponda
 - Cita fuentes como [Fuente: {source_name}]
