@@ -1,4 +1,4 @@
-FROM gemma3:4b
+FROM gemma3:12b
 
 # Extended context window for wiki ingestion.
 # Default is 8K — at 32K the full index + slugs + chunk content fits comfortably
