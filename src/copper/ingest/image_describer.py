@@ -44,7 +44,7 @@ class ImageDescriber:
         return ""
 
     def _describe_ollama(self, image_bytes: bytes, context_hint: str) -> str:
-        import requests
+        import httpx
 
         b64 = base64.b64encode(image_bytes).decode()
         prompt = _DESCRIBE_PROMPT
@@ -52,7 +52,7 @@ class ImageDescriber:
             prompt = f"Surrounding page text:\n{context_hint[:400]}\n\n{prompt}"
 
         try:
-            resp = requests.post(
+            resp = httpx.post(
                 f"{self.base_url}/api/generate",
                 json={
                     "model": self.model,

@@ -88,7 +88,6 @@ disallow_untyped_defs = false
 [[tool.mypy.overrides]]
 module = [
     "yaml",
-    "requests",
     "pdfplumber",
     "core_llm_bridge.*",
     "watchdog.*",
