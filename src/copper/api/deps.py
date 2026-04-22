@@ -9,6 +9,7 @@ from copper.llm.base import LLMBase
 
 if TYPE_CHECKING:
     from copper.core.coppermind import CopperMind
+    from copper.ingest.image_describer import ImageDescriber
 
 
 def _build_llm(provider_name: str, model: str) -> LLMBase:
@@ -91,6 +92,40 @@ def get_tap_llm(mind: "CopperMind") -> LLMBase:
         settings.copper_llm_provider, settings.copper_llm_model,
     )
     return _build_llm(provider, model)
+
+
+def get_ingest_describer(mind: "CopperMind") -> "ImageDescriber | None":
+    """Return an ImageDescriber for multimodal PDF ingestion, or None if disabled.
+
+    Resolution order:
+      1. Per-mind override  (config.yaml: ingest_provider / ingest_model)
+      2. Global ingest      (COPPER_INGEST_PROVIDER / COPPER_INGEST_MODEL)
+    If neither is set, returns None — images are skipped.
+    """
+    from copper.config import settings
+    from copper.ingest.image_describer import ImageDescriber
+
+    provider = mind.config.ingest_provider or settings.copper_ingest_provider
+    if not provider:
+        return None
+
+    model = (
+        mind.config.ingest_model
+        or settings.copper_ingest_model
+        or settings.copper_llm_model
+    )
+    if not model:
+        return None
+
+    if provider == "ollama":
+        return ImageDescriber(
+            provider=provider,
+            model=model,
+            base_url=settings.copper_ollama_base_url,
+            timeout=settings.copper_ollama_timeout,
+        )
+    # Future: add anthropic / openai multimodal branches here.
+    return ImageDescriber(provider=provider, model=model)
 
 
 @lru_cache(maxsize=1)

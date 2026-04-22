@@ -32,6 +32,11 @@ _TOC_SCAN_PAGES = 15
 # Characters sent to the LLM for section boundary detection
 _LLM_SAMPLE_CHARS = 4_000
 
+# Heuristic filter for image extraction — skip small/decorative images
+_MIN_IMAGE_WIDTH = 120
+_MIN_IMAGE_HEIGHT = 120
+_MIN_IMAGE_AREA = 40_000  # px², filters icons, borders, small ornaments
+
 _LLM_SECTION_PROMPT = """\
 The following is the beginning of a document. Identify its main chapters or sections.
 For each section write its exact title as it appears in the document — one per line,
@@ -52,15 +57,17 @@ class PDFPlugin(IngestPlugin):
     def can_handle(self, path: Path) -> bool:
         return path.suffix.lower() == ".pdf"
 
-    def to_markdown(self, path: Path) -> str:
-        pages = self._extract_pages(path)
+    def to_markdown(self, path: Path, image_describer: Any = None) -> str:
+        pages = self._extract_pages(path, image_describer=image_describer)
         if not pages:
             return f"<!-- PDF '{path.name}' contains no extractable text -->"
         return "\n\n---\n\n".join(f"<!-- Page {i} -->\n\n{text}" for i, text in pages)
 
-    def to_chunks(self, path: Path, max_chars: int, llm: Any = None) -> list[str]:
+    def to_chunks(
+        self, path: Path, max_chars: int, llm: Any = None, image_describer: Any = None
+    ) -> list[str]:
         """Hybrid chunking: TOC keyword → TOC pattern → LLM → naive split."""
-        pages = self._extract_pages(path)
+        pages = self._extract_pages(path, image_describer=image_describer)
         if not pages:
             return [f"<!-- PDF '{path.name}' contains no extractable text -->"]
 
@@ -92,7 +99,7 @@ class PDFPlugin(IngestPlugin):
     # Internal helpers                                                    #
     # ------------------------------------------------------------------ #
 
-    def _extract_pages(self, path: Path) -> list[tuple[int, str]]:
+    def _extract_pages(self, path: Path, image_describer: Any = None) -> list[tuple[int, str]]:
         try:
             import pdfplumber
         except ImportError:
@@ -101,18 +108,72 @@ class PDFPlugin(IngestPlugin):
                 "Install it with: pdm install -G pdf"
             )
         result: list[tuple[int, str]] = []
+        total_images_described = 0
         with pdfplumber.open(path) as pdf:
             total = len(pdf.pages)
-            logger.info(f"[pdf] Opening '{path.name}' — {total} pages")
+            logger.info(
+                f"[pdf] Opening '{path.name}' — {total} pages"
+                + (" (multimodal enabled)" if image_describer else "")
+            )
             for i, page in enumerate(pdf.pages, 1):
-                text = page.extract_text() or ""
+                text = (page.extract_text() or "").strip()
                 tables_md = self._extract_tables_as_markdown(page)
-                combined = (text.strip() + "\n\n" + tables_md).strip() if tables_md else text.strip()
+                images_md = ""
+                if image_describer is not None:
+                    images_md, described = self._extract_images_as_markdown(
+                        page, text, image_describer
+                    )
+                    total_images_described += described
+
+                parts = [p for p in (text, tables_md, images_md) if p]
+                combined = "\n\n".join(parts)
                 if combined:
                     result.append((i, combined))
                 if i % 50 == 0 or i == total:
-                    logger.info(f"[pdf] Extracted {i}/{total} pages ({len(result)} with text)...")
+                    extra = f", {total_images_described} images described" if image_describer else ""
+                    logger.info(f"[pdf] Extracted {i}/{total} pages ({len(result)} with text{extra})...")
         return result
+
+    @staticmethod
+    def _extract_images_as_markdown(page, context_text: str, describer: Any) -> tuple[str, int]:
+        """Extract images that pass the heuristic filter and describe them.
+
+        Returns (markdown_block, count_described). Images that fail the size
+        filter or that the model marks as DECORATIVE are skipped silently.
+        """
+        images = getattr(page, "images", None) or []
+        if not images:
+            return "", 0
+
+        import io
+        descriptions: list[str] = []
+        described = 0
+
+        for idx, img in enumerate(images):
+            width = float(img.get("width") or 0)
+            height = float(img.get("height") or 0)
+            if width < _MIN_IMAGE_WIDTH or height < _MIN_IMAGE_HEIGHT:
+                continue
+            if width * height < _MIN_IMAGE_AREA:
+                continue
+
+            try:
+                bbox = (img["x0"], img["top"], img["x1"], img["bottom"])
+                crop = page.within_bbox(bbox)
+                pil_img = crop.to_image(resolution=150).original
+                buf = io.BytesIO()
+                pil_img.save(buf, format="PNG")
+                image_bytes = buf.getvalue()
+            except Exception as exc:
+                logger.warning(f"[pdf] Could not crop image on page {page.page_number}: {exc}")
+                continue
+
+            desc = describer.describe(image_bytes, context_hint=context_text)
+            if desc:
+                descriptions.append(f"![{desc}](page-{page.page_number}-img-{idx})")
+                described += 1
+
+        return ("\n\n".join(descriptions), described)
 
     @staticmethod
     def _extract_tables_as_markdown(page) -> str:

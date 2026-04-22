@@ -29,13 +29,17 @@ class IngestRegistry:
             "Supported formats: .pdf, .md, .txt, and most text files."
         )
 
-    def to_markdown(self, path: Path) -> str:
+    def to_markdown(self, path: Path, image_describer: Any = None) -> str:
         """Convert *path* to markdown using the first matching plugin."""
-        return self._match(path).to_markdown(path)
+        return self._match(path).to_markdown(path, image_describer=image_describer)
 
-    def to_chunks(self, path: Path, max_chars: int, llm: Any = None) -> list[str]:
+    def to_chunks(
+        self, path: Path, max_chars: int, llm: Any = None, image_describer: Any = None
+    ) -> list[str]:
         """Split *path* into chunks using the first matching plugin."""
-        return self._match(path).to_chunks(path, max_chars, llm=llm)
+        return self._match(path).to_chunks(
+            path, max_chars, llm=llm, image_describer=image_describer
+        )
 
 
 def default_registry() -> IngestRegistry:

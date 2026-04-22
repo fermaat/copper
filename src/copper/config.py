@@ -52,6 +52,12 @@ class Settings(CoreSettings):
     copper_tap_provider: str = ""       # empty = fall back to copper_llm_provider
     copper_tap_model: str = ""          # empty = fall back to copper_llm_model
 
+    # ── LLM — ingest (multimodal, for describing PDF images) ────────
+    # Empty provider disables image description entirely.
+    # Model MUST support vision (e.g. gemma3:12b, llava, claude-opus-4-6).
+    copper_ingest_provider: str = ""    # empty = skip image description
+    copper_ingest_model: str = ""       # empty = fall back to copper_llm_model
+
     # ── LLM — Ollama ────────────────────────────────────────────────
     copper_ollama_base_url: str = "http://localhost:11434"
     copper_ollama_timeout: int = 300

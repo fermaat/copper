@@ -29,6 +29,8 @@ class CopperMindConfig:
     store_model: str = ""
     tap_provider: str = ""
     tap_model: str = ""
+    ingest_provider: str = ""
+    ingest_model: str = ""
 
     def to_dict(self) -> dict:
         d: dict = {
@@ -47,6 +49,10 @@ class CopperMindConfig:
             d["tap_provider"] = self.tap_provider
         if self.tap_model:
             d["tap_model"] = self.tap_model
+        if self.ingest_provider:
+            d["ingest_provider"] = self.ingest_provider
+        if self.ingest_model:
+            d["ingest_model"] = self.ingest_model
         return d
 
     @classmethod
@@ -61,6 +67,8 @@ class CopperMindConfig:
             store_model=data.get("store_model", ""),
             tap_provider=data.get("tap_provider", ""),
             tap_model=data.get("tap_model", ""),
+            ingest_provider=data.get("ingest_provider", ""),
+            ingest_model=data.get("ingest_model", ""),
         )
 
 

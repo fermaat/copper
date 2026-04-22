@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 from copper.ingest.base import IngestPlugin
 
@@ -30,7 +31,7 @@ class ObsidianPlugin(IngestPlugin):
     def can_handle(self, path: Path) -> bool:
         return path.suffix.lower() == ".md"
 
-    def to_markdown(self, path: Path) -> str:
+    def to_markdown(self, path: Path, image_describer: Any = None) -> str:
         content = path.read_text(encoding="utf-8", errors="replace")
         content = _EMBED.sub("", content)
         content = _WIKILINK_ALIASED.sub(r"\2", content)

@@ -9,6 +9,7 @@ chunks so they fit within the model's context window.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from core_utils.logger import logger
 
@@ -16,6 +17,9 @@ from copper.core.coppermind import CopperMind
 from copper.core.wiki import WikiManager
 from copper.ingest.registry import default_registry
 from copper.llm.base import LLMBase, Message
+
+if TYPE_CHECKING:
+    from copper.ingest.image_describer import ImageDescriber
 
 
 # Maximum characters sent to the LLM in a single call.
@@ -34,9 +38,15 @@ Nunca modificas los ficheros de raw/. Solo escribes en wiki/.
 class StoreWorkflow:
     """Processes a source file and updates the wiki."""
 
-    def __init__(self, mind: CopperMind, llm: LLMBase):
+    def __init__(
+        self,
+        mind: CopperMind,
+        llm: LLMBase,
+        image_describer: "ImageDescriber | None" = None,
+    ):
         self.mind = mind
         self.llm = llm
+        self.image_describer = image_describer
         self.wiki = WikiManager(mind.wiki_dir)
 
     def run(self, source_path: Path) -> StoreResult:
@@ -53,7 +63,11 @@ class StoreWorkflow:
         logger.info(f"[store] Extracting text from '{source_name}'...")
 
         registry = default_registry()
-        chunks = registry.to_chunks(raw_path, MAX_CHUNK_CHARS, llm=self.llm)
+        chunks = registry.to_chunks(
+            raw_path, MAX_CHUNK_CHARS,
+            llm=self.llm,
+            image_describer=self.image_describer,
+        )
 
         char_count = sum(len(c) for c in chunks)
         logger.info(f"[store] '{source_name}' → {char_count:,} chars in {len(chunks)} chunk(s)")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from copper.ingest.base import IngestPlugin
 
@@ -31,5 +32,5 @@ class PlainTextPlugin(IngestPlugin):
         except (UnicodeDecodeError, OSError):
             return False
 
-    def to_markdown(self, path: Path) -> str:
+    def to_markdown(self, path: Path, image_describer: Any = None) -> str:
         return path.read_text(encoding="utf-8", errors="replace")

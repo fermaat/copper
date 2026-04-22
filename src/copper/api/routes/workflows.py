@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 
-from copper.api.deps import get_store_llm, get_tap_llm
+from copper.api.deps import get_ingest_describer, get_store_llm, get_tap_llm
 from copper.api.models import PolishResponse, StoreResponse, TapRequest, TapResponse
 from copper.api.routes.minds import _get_or_404
 from copper.core.coppermind import CopperMind
@@ -31,7 +31,8 @@ async def store(
     """Upload a file and ingest it into the coppermind."""
     mind = _get_or_404(name)
     llm = get_store_llm(mind)
-    workflow = StoreWorkflow(mind, llm)
+    describer = get_ingest_describer(mind)
+    workflow = StoreWorkflow(mind, llm, image_describer=describer)
 
     # Save directly to raw/ under the original filename so StoreWorkflow
     # preserves the correct source name in the wiki (avoids tempfile slugs).

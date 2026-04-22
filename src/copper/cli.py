@@ -28,7 +28,7 @@ from rich.tree import Tree
 from rich import print as rprint
 
 from copper.core.coppermind import CopperMind
-from copper.api.deps import get_store_llm, get_tap_llm
+from copper.api.deps import get_ingest_describer, get_store_llm, get_tap_llm
 from copper.workflows.store import StoreWorkflow
 from copper.workflows.tap import TapWorkflow
 from copper.workflows.polish import PolishWorkflow
@@ -89,7 +89,8 @@ def store(
         raise typer.Exit(1)
 
     llm = get_store_llm(mind)
-    workflow = StoreWorkflow(mind, llm)
+    describer = get_ingest_describer(mind)
+    workflow = StoreWorkflow(mind, llm, image_describer=describer)
 
     sources: list[Path] = []
     if all_raw:
