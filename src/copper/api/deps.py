@@ -18,6 +18,7 @@ def _build_llm(provider_name: str, model: str) -> LLMBase:
 
     if provider_name == "mock":
         from copper.llm.mock import MockLLM
+
         return MockLLM()
 
     try:
@@ -46,12 +47,18 @@ def _build_llm(provider_name: str, model: str) -> LLMBase:
         return BridgeAdapter(engine)
     except ImportError:
         from copper.llm.mock import MockLLM
+
         return MockLLM()
 
 
-def _resolve(mind_provider: str, mind_model: str,
-             global_provider: str, global_model: str,
-             fallback_provider: str, fallback_model: str) -> tuple[str, str]:
+def _resolve(
+    mind_provider: str,
+    mind_model: str,
+    global_provider: str,
+    global_model: str,
+    fallback_provider: str,
+    fallback_model: str,
+) -> tuple[str, str]:
     """Apply the three-level resolution hierarchy for provider + model."""
     provider = mind_provider or global_provider or fallback_provider
     model = mind_model or global_model or fallback_model
@@ -69,9 +76,12 @@ def get_store_llm(mind: "CopperMind") -> LLMBase:
     from copper.config import settings
 
     provider, model = _resolve(
-        mind.config.store_provider, mind.config.store_model,
-        settings.copper_store_provider, settings.copper_store_model,
-        settings.copper_llm_provider, settings.copper_llm_model,
+        mind.config.store_provider,
+        mind.config.store_model,
+        settings.copper_store_provider,
+        settings.copper_store_model,
+        settings.copper_llm_provider,
+        settings.copper_llm_model,
     )
     return _build_llm(provider, model)
 
@@ -87,9 +97,12 @@ def get_tap_llm(mind: "CopperMind") -> LLMBase:
     from copper.config import settings
 
     provider, model = _resolve(
-        mind.config.tap_provider, mind.config.tap_model,
-        settings.copper_tap_provider, settings.copper_tap_model,
-        settings.copper_llm_provider, settings.copper_llm_model,
+        mind.config.tap_provider,
+        mind.config.tap_model,
+        settings.copper_tap_provider,
+        settings.copper_tap_model,
+        settings.copper_llm_provider,
+        settings.copper_llm_model,
     )
     return _build_llm(provider, model)
 
@@ -109,11 +122,7 @@ def get_ingest_describer(mind: "CopperMind") -> "ImageDescriber | None":
     if not provider:
         return None
 
-    model = (
-        mind.config.ingest_model
-        or settings.copper_ingest_model
-        or settings.copper_llm_model
-    )
+    model = mind.config.ingest_model or settings.copper_ingest_model or settings.copper_llm_model
     if not model:
         return None
 
@@ -135,4 +144,5 @@ def get_llm() -> LLMBase:
     Kept for backwards compatibility and simple use cases.
     """
     from copper.config import settings
+
     return _build_llm(settings.copper_llm_provider, settings.copper_llm_model)

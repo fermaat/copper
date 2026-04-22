@@ -8,6 +8,7 @@ from pathlib import Path
 def tmp_minds_dir(tmp_path, monkeypatch):
     """Override MINDS_DIR to use a temp directory."""
     import copper.core.coppermind as cm_module
+
     monkeypatch.setattr(cm_module, "MINDS_DIR", tmp_path)
     return tmp_path
 

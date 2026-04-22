@@ -17,7 +17,6 @@ from dataclasses import dataclass
 
 from core_utils.logger import logger
 
-
 _DESCRIBE_PROMPT = (
     "Describe the informational content of this image in one short paragraph "
     "(max 3 sentences). Focus on text, diagrams, tables, charts, maps, or "

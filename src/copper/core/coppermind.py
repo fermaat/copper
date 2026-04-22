@@ -146,7 +146,8 @@ class CopperMind:
         if not self.wiki_dir.exists():
             return []
         return [
-            f for f in self.wiki_dir.glob("*.md")
+            f
+            for f in self.wiki_dir.glob("*.md")
             if f.name not in ("index.md", "log.md") and not f.name.startswith("lint-report")
         ]
 
@@ -252,8 +253,13 @@ class CopperMind:
             raise FileExistsError(f"Ya existe una mentecobre llamada '{name}'.")
 
         # Create directory structure
-        for d in [mind.raw_dir, mind.raw_dir / "assets", mind.wiki_dir,
-                  mind.outputs_dir, mind.meta_dir]:
+        for d in [
+            mind.raw_dir,
+            mind.raw_dir / "assets",
+            mind.wiki_dir,
+            mind.outputs_dir,
+            mind.meta_dir,
+        ]:
             d.mkdir(parents=True, exist_ok=True)
 
         # Write config
@@ -270,7 +276,9 @@ class CopperMind:
         mind.schema_path.write_text(schema)
 
         # Initialize index and log
-        mind.index_path.write_text(f"# Índice — {name}\n\n*La mentecobre está vacía. Almacena conocimiento con `copper store`.*\n")
+        mind.index_path.write_text(
+            f"# Índice — {name}\n\n*La mentecobre está vacía. Almacena conocimiento con `copper store`.*\n"
+        )
         mind.log_path.write_text(f"# Log — {name}\n")
         mind.append_log("forge", f"Mentecobre '{name}' creada sobre el tema: {topic}")
 
@@ -281,7 +289,8 @@ class CopperMind:
         if not MINDS_DIR.exists():
             return []
         return [
-            cls(p) for p in sorted(MINDS_DIR.iterdir())
+            cls(p)
+            for p in sorted(MINDS_DIR.iterdir())
             if p.is_dir() and (p / ".copper" / "config.yaml").exists()
         ]
 

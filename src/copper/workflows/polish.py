@@ -13,7 +13,6 @@ from copper.core.coppermind import CopperMind
 from copper.core.wiki import WikiManager
 from copper.llm.base import LLMBase, Message
 
-
 POLISH_SYSTEM = """\
 Eres el Archivista revisando la salud de una mentecobre.
 Inspeccionas el wiki en busca de:
@@ -46,7 +45,9 @@ class PolishWorkflow:
         # Save lint report
         date = datetime.now().strftime("%Y-%m-%d")
         report_path = self.mind.wiki_dir / f"lint-report-{date}.md"
-        report_path.write_text(f"# Informe de Salud — {self.mind.name} ({date})\n\n{response.text}\n")
+        report_path.write_text(
+            f"# Informe de Salud — {self.mind.name} ({date})\n\n{response.text}\n"
+        )
 
         # Also run structural checks (no LLM needed)
         structural = _structural_checks(self.wiki)

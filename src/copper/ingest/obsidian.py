@@ -8,13 +8,12 @@ from typing import Any
 
 from copper.ingest.base import IngestPlugin
 
-
 # Matches [[Page Name|Display Text]] or [[Page Name]]
-_WIKILINK_ALIASED = re.compile(r'\[\[([^\]|]+)\|([^\]]+)\]\]')
-_WIKILINK_PLAIN = re.compile(r'\[\[([^\]]+)\]\]')
+_WIKILINK_ALIASED = re.compile(r"\[\[([^\]|]+)\|([^\]]+)\]\]")
+_WIKILINK_PLAIN = re.compile(r"\[\[([^\]]+)\]\]")
 
 # Matches ![[embed.png]] — file embeds (images, audio, other notes)
-_EMBED = re.compile(r'!\[\[[^\]]*\]\]')
+_EMBED = re.compile(r"!\[\[[^\]]*\]\]")
 
 
 class ObsidianPlugin(IngestPlugin):

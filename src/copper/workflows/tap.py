@@ -15,7 +15,6 @@ from copper.core.coppermind import CopperMind
 from copper.core.wiki import WikiManager
 from copper.llm.base import LLMBase, LLMResponse, Message
 
-
 TAP_SYSTEM = """\
 You are the Archivist of one or more copperminds. You answer questions based
 exclusively on the compiled wiki content. Cite the wiki pages that inform
@@ -174,12 +173,16 @@ def _build_context(minds: list[CopperMind], selected: dict[str, list[str]]) -> s
 
 def _build_tap_prompt(context: str, question: str, multi: bool = False) -> str:
     cross_mind_instructions = (
-        "\n\nYou are consulting MULTIPLE copperminds. In addition to answering, actively look for:\n"
-        "- Concepts shared across different minds\n"
-        "- Contradictions or tensions between them\n"
-        "- Non-obvious connections that enrich the answer\n"
-        "Mark them as: [Connection: mind-a ↔ mind-b: brief description]\n"
-    ) if multi else ""
+        (
+            "\n\nYou are consulting MULTIPLE copperminds. In addition to answering, actively look for:\n"
+            "- Concepts shared across different minds\n"
+            "- Contradictions or tensions between them\n"
+            "- Non-obvious connections that enrich the answer\n"
+            "Mark them as: [Connection: mind-a ↔ mind-b: brief description]\n"
+        )
+        if multi
+        else ""
+    )
 
     return f"""\
 ## Wiki content
@@ -195,6 +198,7 @@ Cite the pages you use with [Source: page-name].
 def _extract_connections(text: str) -> list[str]:
     """Parse [Connection: ...] markers from the LLM response."""
     import re
+
     return re.findall(r"\[Connection:[^\]]+\]", text)
 
 

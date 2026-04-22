@@ -45,7 +45,7 @@ class IngestRegistry:
 def default_registry() -> IngestRegistry:
     """Return the default registry with all built-in plugins registered."""
     registry = IngestRegistry()
-    registry.register(PDFPlugin())       # .pdf — binary, must come before plain-text sniff
+    registry.register(PDFPlugin())  # .pdf — binary, must come before plain-text sniff
     registry.register(ObsidianPlugin())  # .md — checked before PlainText to normalize wikilinks
-    registry.register(PlainTextPlugin()) # everything else
+    registry.register(PlainTextPlugin())  # everything else
     return registry

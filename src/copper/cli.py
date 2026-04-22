@@ -29,10 +29,9 @@ from rich import print as rprint
 
 from copper.core.coppermind import CopperMind
 from copper.api.deps import get_ingest_describer, get_store_llm, get_tap_llm
-from copper.workflows.store import StoreWorkflow
+from copper.workflows.store import StoreResult, StoreWorkflow
 from copper.workflows.tap import TapWorkflow
 from copper.workflows.polish import PolishWorkflow
-
 
 app = typer.Typer(
     name="copper",
@@ -41,8 +40,6 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
-
-
 
 
 # ------------------------------------------------------------------ #
@@ -61,15 +58,17 @@ def forge(
 
     try:
         mind = CopperMind.forge(name, topic)
-        console.print(Panel(
-            f"[bold green]Mentecobre forjada:[/bold green] [cyan]{name}[/cyan]\n"
-            f"[dim]Tema:[/dim] {topic}\n"
-            f"[dim]Ubicación:[/dim] {mind.path}\n\n"
-            f"[dim]La memoria espera ser llenada.[/dim]\n"
-            f"[dim]Almacena conocimiento con:[/dim] [bold]copper store {name} <fichero>[/bold]",
-            title="[copper]⚒ Forja completa[/copper]",
-            border_style="yellow",
-        ))
+        console.print(
+            Panel(
+                f"[bold green]Mentecobre forjada:[/bold green] [cyan]{name}[/cyan]\n"
+                f"[dim]Tema:[/dim] {topic}\n"
+                f"[dim]Ubicación:[/dim] {mind.path}\n\n"
+                f"[dim]La memoria espera ser llenada.[/dim]\n"
+                f"[dim]Almacena conocimiento con:[/dim] [bold]copper store {name} <fichero>[/bold]",
+                title="[copper]⚒ Forja completa[/copper]",
+                border_style="yellow",
+            )
+        )
     except FileExistsError as e:
         console.print(f"[red]✗ {e}[/red]")
         raise typer.Exit(1)
@@ -79,7 +78,9 @@ def forge(
 def store(
     name: Annotated[str, typer.Argument(help="Nombre de la mentecobre")],
     source: Annotated[Optional[Path], typer.Argument(help="Fichero a almacenar")] = None,
-    all_raw: Annotated[bool, typer.Option("--all", help="Procesar todos los ficheros en raw/")] = False,
+    all_raw: Annotated[
+        bool, typer.Option("--all", help="Procesar todos los ficheros en raw/")
+    ] = False,
 ):
     """📥  Store knowledge into a coppermind (fill it)."""
     try:
@@ -134,12 +135,16 @@ def store(
 
 @app.command()
 def tap(
-    names: Annotated[str, typer.Argument(
-        help="Nombre(s) de mentecobre (separados por coma) o --all"
-    )],
+    names: Annotated[
+        str, typer.Argument(help="Nombre(s) de mentecobre (separados por coma) o --all")
+    ],
     question: Annotated[str, typer.Argument(help="Pregunta a responder")],
-    save: Annotated[bool, typer.Option("--save", "-s", help="Guardar respuesta en outputs/")] = False,
-    with_links: Annotated[bool, typer.Option("--with-links", "-l", help="Incluir también las mentecobres enlazadas")] = False,
+    save: Annotated[
+        bool, typer.Option("--save", "-s", help="Guardar respuesta en outputs/")
+    ] = False,
+    with_links: Annotated[
+        bool, typer.Option("--with-links", "-l", help="Incluir también las mentecobres enlazadas")
+    ] = False,
 ):
     """🔍  Tap a coppermind (extract knowledge)."""
     try:
@@ -167,11 +172,13 @@ def tap(
     with console.status(f"[cyan]Extrayendo de [{mind_list}]...[/cyan]"):
         result = workflow.run(question, save_to_outputs=save)
 
-    console.print(Panel(
-        Markdown(result.answer),
-        title=f"[cyan]💡 {question[:60]}[/cyan]",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            Markdown(result.answer),
+            title=f"[cyan]💡 {question[:60]}[/cyan]",
+            border_style="blue",
+        )
+    )
 
     if result.connections:
         console.print("\n[bold yellow]🔗 Conexiones detectadas:[/bold yellow]")
@@ -203,11 +210,13 @@ def polish(
     with console.status("[cyan]El Archivista inspecciona la mentecobre...[/cyan]"):
         result = workflow.run()
 
-    console.print(Panel(
-        Markdown(result.report_text),
-        title=f"[yellow]🪙 Informe de salud — {name}[/yellow]",
-        border_style="yellow",
-    ))
+    console.print(
+        Panel(
+            Markdown(result.report_text),
+            title=f"[yellow]🪙 Informe de salud — {name}[/yellow]",
+            border_style="yellow",
+        )
+    )
 
     if result.structural_issues:
         console.print("\n[bold]Comprobaciones estructurales:[/bold]")
@@ -262,24 +271,26 @@ def status(
 
     stats = mind.stats()
 
-    console.print(Panel(
-        f"[bold]Tema:[/bold] {stats['topic']}\n"
-        f"[bold]Fuentes en raw/:[/bold] {stats['raw_sources']}\n"
-        f"[bold]Páginas wiki:[/bold] {stats['wiki_pages']}\n"
-        f"[bold]Mentecobres enlazadas:[/bold] {', '.join(stats['linked_minds']) or 'ninguna'}\n"
-        f"[bold]Ubicación:[/bold] [dim]{mind.path}[/dim]\n"
-        f"[bold]Creada:[/bold] {mind.config.created[:10]}",
-        title=f"[cyan]📊 {name}[/cyan]",
-        border_style="cyan",
-    ))
+    console.print(
+        Panel(
+            f"[bold]Tema:[/bold] {stats['topic']}\n"
+            f"[bold]Fuentes en raw/:[/bold] {stats['raw_sources']}\n"
+            f"[bold]Páginas wiki:[/bold] {stats['wiki_pages']}\n"
+            f"[bold]Mentecobres enlazadas:[/bold] {', '.join(stats['linked_minds']) or 'ninguna'}\n"
+            f"[bold]Ubicación:[/bold] [dim]{mind.path}[/dim]\n"
+            f"[bold]Creada:[/bold] {mind.config.created[:10]}",
+            title=f"[cyan]📊 {name}[/cyan]",
+            border_style="cyan",
+        )
+    )
 
 
 @app.command()
 def chat(
-    names: Annotated[str, typer.Argument(
-        help="Nombre(s) de mentecobre o --all"
-    )],
-    with_links: Annotated[bool, typer.Option("--with-links", "-l", help="Incluir mentecobres enlazadas")] = False,
+    names: Annotated[str, typer.Argument(help="Nombre(s) de mentecobre o --all")],
+    with_links: Annotated[
+        bool, typer.Option("--with-links", "-l", help="Incluir mentecobres enlazadas")
+    ] = False,
 ):
     """💬  Interactive chat with coppermind(s)."""
     try:
@@ -303,12 +314,14 @@ def chat(
     workflow = TapWorkflow(minds, llm)
     mind_list = ", ".join(m.name for m in minds)
 
-    console.print(Panel(
-        f"Conectado a: [cyan]{mind_list}[/cyan]\n"
-        "[dim]Escribe tu pregunta. Comandos: /save /exit[/dim]",
-        title="[copper]💬 Sesión de extracción[/copper]",
-        border_style="yellow",
-    ))
+    console.print(
+        Panel(
+            f"Conectado a: [cyan]{mind_list}[/cyan]\n"
+            "[dim]Escribe tu pregunta. Comandos: /save /exit[/dim]",
+            title="[copper]💬 Sesión de extracción[/copper]",
+            border_style="yellow",
+        )
+    )
 
     while True:
         try:
@@ -370,7 +383,9 @@ def unlink(
         console.print(f"[red]✗ {e}[/red]")
         raise typer.Exit(1)
 
-    console.print(f"[yellow]✓[/yellow] Enlace entre [cyan]{name_a}[/cyan] y [cyan]{name_b}[/cyan] eliminado.")
+    console.print(
+        f"[yellow]✓[/yellow] Enlace entre [cyan]{name_a}[/cyan] y [cyan]{name_b}[/cyan] eliminado."
+    )
 
 
 @app.command()
@@ -421,14 +436,16 @@ def watch(
 
     llm = get_store_llm(mind)
 
-    console.print(Panel(
-        f"[bold]Mentecobre:[/bold] [cyan]{name}[/cyan]\n"
-        f"[bold]Observando:[/bold] [dim]{mind.raw_dir}[/dim]\n\n"
-        "[dim]Copia o mueve ficheros a raw/ para almacenarlos automáticamente.\n"
-        "Ctrl+C para salir.[/dim]",
-        title="[copper]👁 Archivista en guardia[/copper]",
-        border_style="yellow",
-    ))
+    console.print(
+        Panel(
+            f"[bold]Mentecobre:[/bold] [cyan]{name}[/cyan]\n"
+            f"[bold]Observando:[/bold] [dim]{mind.raw_dir}[/dim]\n\n"
+            "[dim]Copia o mueve ficheros a raw/ para almacenarlos automáticamente.\n"
+            "Ctrl+C para salir.[/dim]",
+            title="[copper]👁 Archivista en guardia[/copper]",
+            border_style="yellow",
+        )
+    )
 
     def _on_result(path: Path, result: StoreResult) -> None:
         cost_str = f" · [dim]${result.cost_usd:.4f}[/dim]" if result.cost_usd else ""
@@ -444,6 +461,7 @@ def watch(
 
     try:
         from copper.watch import watch_raw_dir
+
         watch_raw_dir(mind, llm, on_result=_on_result, on_error=_on_error)
     except ImportError as e:
         console.print(f"[red]✗ {e}[/red]")
@@ -469,14 +487,16 @@ def serve(
         )
         raise typer.Exit(1)
 
-    console.print(Panel(
-        f"[bold]API:[/bold]  http://{host}:{port}\n"
-        f"[bold]Docs:[/bold] http://{host}:{port}/api/docs\n"
-        f"[bold]UI:[/bold]   http://{host}:{port}/\n\n"
-        "[dim]The Archivist awaits. Press Ctrl+C to stop.[/dim]",
-        title="[copper]🌐 Copper API[/copper]",
-        border_style="yellow",
-    ))
+    console.print(
+        Panel(
+            f"[bold]API:[/bold]  http://{host}:{port}\n"
+            f"[bold]Docs:[/bold] http://{host}:{port}/api/docs\n"
+            f"[bold]UI:[/bold]   http://{host}:{port}/\n\n"
+            "[dim]The Archivist awaits. Press Ctrl+C to stop.[/dim]",
+            title="[copper]🌐 Copper API[/copper]",
+            border_style="yellow",
+        )
+    )
 
     app_instance = create_app()
     uvicorn.run(app_instance, host=host, port=port, reload=reload)

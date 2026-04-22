@@ -12,7 +12,6 @@ from typing import Any
 
 import yaml
 
-
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 
 
@@ -44,7 +43,7 @@ class WikiPage:
     @property
     def body(self) -> str:
         m = FRONTMATTER_RE.match(self.raw)
-        return self.raw[m.end():] if m else self.raw
+        return self.raw[m.end() :] if m else self.raw
 
     def write(self, content: str) -> None:
         self.path.write_text(content)
@@ -72,7 +71,8 @@ class WikiManager:
 
     def all_pages(self) -> list[WikiPage]:
         return [
-            WikiPage(p) for p in sorted(self.wiki_dir.glob("*.md"))
+            WikiPage(p)
+            for p in sorted(self.wiki_dir.glob("*.md"))
             if p.name not in ("index.md", "log.md") and not p.name.startswith("lint-report")
         ]
 
@@ -107,7 +107,9 @@ class WikiManager:
         if bump_source_count:
             fm["source_count"] = fm.get("source_count", 0) + 1
 
-        content = f"---\n{yaml.dump(fm, default_flow_style=False, allow_unicode=True)}---\n\n{new_body}"
+        content = (
+            f"---\n{yaml.dump(fm, default_flow_style=False, allow_unicode=True)}---\n\n{new_body}"
+        )
         page.write(content)
         return page
 

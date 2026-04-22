@@ -147,4 +147,5 @@ def polish(
 
 def _tap_system() -> str:
     from copper.workflows.tap import TAP_SYSTEM
+
     return TAP_SYSTEM

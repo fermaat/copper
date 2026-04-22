@@ -7,6 +7,7 @@ from pathlib import Path
 @pytest.fixture
 def tmp_minds_dir(tmp_path, monkeypatch):
     import copper.core.coppermind as cm_module
+
     monkeypatch.setattr(cm_module, "MINDS_DIR", tmp_path)
     return tmp_path
 
@@ -14,6 +15,7 @@ def tmp_minds_dir(tmp_path, monkeypatch):
 @pytest.fixture
 def mind(tmp_minds_dir):
     from copper.core.coppermind import CopperMind
+
     return CopperMind.forge("test-mind", "inteligencia artificial")
 
 
@@ -32,19 +34,22 @@ def source_file(tmp_path):
 # Store                                                               #
 # ------------------------------------------------------------------ #
 
+
 class TestStoreWorkflow:
     def test_store_basic(self, mind, source_file):
         from copper.workflows.store import StoreWorkflow
         from copper.llm.mock import MockLLM
 
-        llm = MockLLM([
-            '<wiki_updates>'
-            '<page slug="transformers" title="Transformers" action="create">'
-            '<content>Los transformers usan atención. [Fuente: articulo.md]</content>'
-            '</page>'
-            '<index># Índice\n\n- [[transformers]] — Arquitectura transformer</index>'
-            '</wiki_updates>'
-        ])
+        llm = MockLLM(
+            [
+                "<wiki_updates>"
+                '<page slug="transformers" title="Transformers" action="create">'
+                "<content>Los transformers usan atención. [Fuente: articulo.md]</content>"
+                "</page>"
+                "<index># Índice\n\n- [[transformers]] — Arquitectura transformer</index>"
+                "</wiki_updates>"
+            ]
+        )
         workflow = StoreWorkflow(mind, llm)
         result = workflow.run(source_file)
 
@@ -56,14 +61,16 @@ class TestStoreWorkflow:
         from copper.workflows.store import StoreWorkflow
         from copper.llm.mock import MockLLM
 
-        llm = MockLLM([
-            '<wiki_updates>'
-            '<page slug="resumen" title="Resumen" action="create">'
-            '<content>Resumen de la fuente.</content>'
-            '</page>'
-            '<index># Índice actualizado</index>'
-            '</wiki_updates>'
-        ])
+        llm = MockLLM(
+            [
+                "<wiki_updates>"
+                '<page slug="resumen" title="Resumen" action="create">'
+                "<content>Resumen de la fuente.</content>"
+                "</page>"
+                "<index># Índice actualizado</index>"
+                "</wiki_updates>"
+            ]
+        )
         workflow = StoreWorkflow(mind, llm)
         workflow.run(source_file)
 
@@ -106,12 +113,15 @@ class TestStoreWorkflow:
 # Tap                                                                 #
 # ------------------------------------------------------------------ #
 
+
 class TestTapWorkflow:
     def test_tap_returns_answer(self, mind):
         from copper.workflows.tap import TapWorkflow
         from copper.llm.mock import MockLLM
 
-        llm = MockLLM(["Los transformers son arquitecturas de redes neuronales. [Fuente: transformers]"])
+        llm = MockLLM(
+            ["Los transformers son arquitecturas de redes neuronales. [Fuente: transformers]"]
+        )
         workflow = TapWorkflow([mind], llm)
         result = workflow.run("¿Qué son los transformers?")
 
@@ -161,6 +171,7 @@ class TestTapWorkflow:
 # ------------------------------------------------------------------ #
 # Polish                                                              #
 # ------------------------------------------------------------------ #
+
 
 class TestPolishWorkflow:
     def test_polish_generates_report(self, mind):

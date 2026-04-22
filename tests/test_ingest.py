@@ -12,7 +12,6 @@ from copper.ingest.plain import PlainTextPlugin
 from copper.ingest.pdf import PDFPlugin
 from copper.ingest.registry import IngestRegistry, default_registry
 
-
 # ------------------------------------------------------------------ #
 # PlainTextPlugin                                                     #
 # ------------------------------------------------------------------ #

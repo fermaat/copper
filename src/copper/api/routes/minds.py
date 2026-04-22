@@ -70,8 +70,7 @@ def get_graph():
     """Return the full coppermind link graph."""
     minds = CopperMind.list_all()
     nodes = [
-        GraphNode(name=m.name, topic=m.config.topic, links=m.config.linked_minds)
-        for m in minds
+        GraphNode(name=m.name, topic=m.config.topic, links=m.config.linked_minds) for m in minds
     ]
     edge_count = sum(len(n.links) for n in nodes) // 2
     return GraphResponse(nodes=nodes, edge_count=edge_count)
@@ -93,6 +92,7 @@ def get_mind(name: str):
 def delete_mind(name: str):
     """Delete a coppermind (irreversible)."""
     import shutil
+
     mind = _get_or_404(name)
     shutil.rmtree(mind.path)
 
@@ -108,6 +108,7 @@ def list_wiki_pages(name: str):
 def get_wiki_page(name: str, slug: str):
     """Read a specific wiki page."""
     from copper.core.wiki import WikiManager
+
     mind = _get_or_404(name)
     wm = WikiManager(mind.wiki_dir)
     page = wm.page(slug)

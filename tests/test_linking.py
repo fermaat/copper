@@ -6,6 +6,7 @@ import pytest
 @pytest.fixture
 def tmp_minds_dir(tmp_path, monkeypatch):
     import copper.core.coppermind as cm_module
+
     monkeypatch.setattr(cm_module, "MINDS_DIR", tmp_path)
     return tmp_path
 
@@ -13,6 +14,7 @@ def tmp_minds_dir(tmp_path, monkeypatch):
 @pytest.fixture
 def two_minds(tmp_minds_dir):
     from copper.core.coppermind import CopperMind
+
     alpha = CopperMind.forge("alpha", "inteligencia artificial")
     beta = CopperMind.forge("beta", "cosmere lore")
     return alpha, beta
@@ -22,6 +24,7 @@ def two_minds(tmp_minds_dir):
 # Link / Unlink                                                       #
 # ------------------------------------------------------------------ #
 
+
 class TestLinking:
     def test_link_is_bidirectional(self, two_minds):
         alpha, beta = two_minds
@@ -29,6 +32,7 @@ class TestLinking:
 
         # Reload from disk
         from copper.core.coppermind import CopperMind
+
         alpha2 = CopperMind.get("alpha")
         beta2 = CopperMind.get("beta")
 
@@ -37,12 +41,14 @@ class TestLinking:
 
     def test_link_self_raises(self, tmp_minds_dir):
         from copper.core.coppermind import CopperMind
+
         mind = CopperMind.forge("solo", "tema")
         with pytest.raises(ValueError):
             mind.link(mind)
 
     def test_link_nonexistent_raises(self, tmp_minds_dir):
         from copper.core.coppermind import CopperMind
+
         mind = CopperMind.forge("real", "tema")
         ghost = CopperMind(mind.path.parent / "ghost")
         with pytest.raises(FileNotFoundError):
@@ -54,6 +60,7 @@ class TestLinking:
         alpha.link(beta)  # Should not duplicate
 
         from copper.core.coppermind import CopperMind
+
         alpha2 = CopperMind.get("alpha")
         assert alpha2.config.linked_minds.count("beta") == 1
 
@@ -63,6 +70,7 @@ class TestLinking:
         alpha.unlink(beta)
 
         from copper.core.coppermind import CopperMind
+
         alpha2 = CopperMind.get("alpha")
         beta2 = CopperMind.get("beta")
         assert "beta" not in alpha2.config.linked_minds
@@ -73,6 +81,7 @@ class TestLinking:
         alpha.link(beta)
 
         from copper.core.coppermind import CopperMind
+
         alpha2 = CopperMind.get("alpha")
         linked = alpha2.linked_minds()
         assert len(linked) == 1
@@ -96,6 +105,7 @@ class TestLinking:
         alpha.link(beta)
 
         from copper.core.coppermind import CopperMind
+
         alpha2 = CopperMind.get("alpha")
         expanded = alpha2.expand_with_links()
         names = {m.name for m in expanded}
@@ -103,6 +113,7 @@ class TestLinking:
 
     def test_expand_with_links_no_duplicates(self, tmp_minds_dir):
         from copper.core.coppermind import CopperMind
+
         alpha = CopperMind.forge("alpha", "A")
         beta = CopperMind.forge("beta", "B")
         gamma = CopperMind.forge("gamma", "C")
@@ -127,6 +138,7 @@ class TestLinking:
 # ------------------------------------------------------------------ #
 # Cross-mind detection in TapWorkflow                                 #
 # ------------------------------------------------------------------ #
+
 
 class TestCrossMindTap:
     def test_tap_multi_includes_connections(self, two_minds):

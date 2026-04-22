@@ -9,7 +9,6 @@ import pytest
 
 from copper.watch import _RawDirHandler, _IGNORED_NAMES, _IGNORED_SUFFIXES
 
-
 # ------------------------------------------------------------------ #
 # Helpers                                                             #
 # ------------------------------------------------------------------ #
@@ -42,9 +41,11 @@ class TestRawDirHandler:
         for ext in _IGNORED_SUFFIXES:
             f = tmp_path / f"file{ext}"
             f.write_text("x")
-            assert not handler._should_process(f) if (
-                handler := _make_handler(MagicMock(), MagicMock())
-            ) else True
+            assert (
+                not handler._should_process(f)
+                if (handler := _make_handler(MagicMock(), MagicMock()))
+                else True
+            )
 
     def test_processes_md_file(self, tmp_path):
         f = tmp_path / "note.md"
@@ -90,9 +91,7 @@ class TestRawDirHandler:
         with patch("copper.watch.StoreWorkflow") as MockWorkflow:
             MockWorkflow.return_value.run.side_effect = RuntimeError("LLM timeout")
             with patch("copper.watch._wait_for_stable", return_value=True):
-                handler = _make_handler(
-                    mind, llm, on_error=lambda p, e: errors.append(e)
-                )
+                handler = _make_handler(mind, llm, on_error=lambda p, e: errors.append(e))
                 handler.process(f)
 
         assert len(errors) == 1
@@ -107,9 +106,7 @@ class TestRawDirHandler:
         f.write_bytes(b"%PDF-1.4 stub")
 
         with patch("copper.watch._wait_for_stable", return_value=False):
-            handler = _make_handler(
-                mind, llm, on_error=lambda p, e: errors.append(e)
-            )
+            handler = _make_handler(mind, llm, on_error=lambda p, e: errors.append(e))
             handler.process(f)
 
         assert len(errors) == 1
@@ -125,7 +122,8 @@ class TestRawDirHandler:
         f.write_bytes(b"garbage")
 
         handler = _make_handler(
-            mind, llm,
+            mind,
+            llm,
             on_result=lambda p, r: results.append(r),
             on_error=lambda p, e: errors.append(e),
         )
@@ -144,6 +142,8 @@ class TestWatchRawDir:
     def test_raises_import_error_if_watchdog_missing(self):
         from copper.watch import watch_raw_dir
 
-        with patch.dict("sys.modules", {"watchdog": None, "watchdog.observers": None, "watchdog.events": None}):
+        with patch.dict(
+            "sys.modules", {"watchdog": None, "watchdog.observers": None, "watchdog.events": None}
+        ):
             with pytest.raises(ImportError, match="watchdog"):
                 watch_raw_dir(MagicMock(), MagicMock())

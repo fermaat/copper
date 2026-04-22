@@ -15,7 +15,6 @@ from copper.core.coppermind import CopperMind
 from copper.llm.base import LLMBase
 from copper.workflows.store import StoreResult, StoreWorkflow
 
-
 # Files that land in raw/ but should not be auto-ingested
 _IGNORED_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 _IGNORED_SUFFIXES = {".tmp", ".part", ".crdownload", ".download"}
@@ -106,8 +105,7 @@ def watch_raw_dir(
         from watchdog.observers import Observer
     except ImportError:
         raise ImportError(
-            "watchdog is required for auto-ingest.\n"
-            "Install it with: pdm install -G watch"
+            "watchdog is required for auto-ingest.\n" "Install it with: pdm install -G watch"
         )
 
     handler_obj = _RawDirHandler(mind, llm, on_result=on_result, on_error=on_error)

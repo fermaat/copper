@@ -38,6 +38,7 @@ def client(tmp_minds_dir):
 def mind_in_db(tmp_minds_dir):
     """Pre-forge a coppermind for tests that need one."""
     from copper.core.coppermind import CopperMind
+
     return CopperMind.forge("test-mind", "artificial intelligence")
 
 
@@ -117,7 +118,13 @@ class TestLinkRoutes:
         client.post("/minds/link", json={"name_a": "p", "name_b": "q"})
 
         import json as _json
-        res = client.request("DELETE", "/minds/link", content=_json.dumps({"name_a": "p", "name_b": "q"}), headers={"Content-Type": "application/json"})
+
+        res = client.request(
+            "DELETE",
+            "/minds/link",
+            content=_json.dumps({"name_a": "p", "name_b": "q"}),
+            headers={"Content-Type": "application/json"},
+        )
         assert res.status_code == 204
 
         stats = client.get("/minds/p").json()

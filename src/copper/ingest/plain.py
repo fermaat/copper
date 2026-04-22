@@ -7,13 +7,34 @@ from typing import Any
 
 from copper.ingest.base import IngestPlugin
 
-
 # Extensions that are always treated as plain text, regardless of sniffing.
 _TEXT_EXTENSIONS = {
-    ".md", ".txt", ".rst", ".html", ".htm",
-    ".py", ".js", ".ts", ".go", ".rs", ".java", ".c", ".cpp", ".h",
-    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".csv", ".xml",
-    ".sh", ".bash", ".zsh", ".fish",
+    ".md",
+    ".txt",
+    ".rst",
+    ".html",
+    ".htm",
+    ".py",
+    ".js",
+    ".ts",
+    ".go",
+    ".rs",
+    ".java",
+    ".c",
+    ".cpp",
+    ".h",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".csv",
+    ".xml",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".fish",
 }
 
 

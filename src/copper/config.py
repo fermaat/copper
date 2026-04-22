@@ -39,24 +39,24 @@ class Settings(CoreSettings):
     }
 
     # ── LLM — generic (fallback for all workflows) ──────────────────
-    copper_llm_provider: str = "mock"   # mock | ollama | anthropic | openai
-    copper_llm_model: str = ""          # passed to the provider; empty = provider default
+    copper_llm_provider: str = "mock"  # mock | ollama | anthropic | openai
+    copper_llm_model: str = ""  # passed to the provider; empty = provider default
 
     # ── LLM — store + polish (override generic) ─────────────────────
     # Used when building/updating the wiki. Typically a more capable model.
-    copper_store_provider: str = ""     # empty = fall back to copper_llm_provider
-    copper_store_model: str = ""        # empty = fall back to copper_llm_model
+    copper_store_provider: str = ""  # empty = fall back to copper_llm_provider
+    copper_store_model: str = ""  # empty = fall back to copper_llm_model
 
     # ── LLM — tap + chat (override generic) ─────────────────────────
     # Used when querying the wiki. Can be a faster/cheaper/local model.
-    copper_tap_provider: str = ""       # empty = fall back to copper_llm_provider
-    copper_tap_model: str = ""          # empty = fall back to copper_llm_model
+    copper_tap_provider: str = ""  # empty = fall back to copper_llm_provider
+    copper_tap_model: str = ""  # empty = fall back to copper_llm_model
 
     # ── LLM — ingest (multimodal, for describing PDF images) ────────
     # Empty provider disables image description entirely.
     # Model MUST support vision (e.g. gemma3:12b, llava, claude-opus-4-6).
-    copper_ingest_provider: str = ""    # empty = skip image description
-    copper_ingest_model: str = ""       # empty = fall back to copper_llm_model
+    copper_ingest_provider: str = ""  # empty = skip image description
+    copper_ingest_model: str = ""  # empty = fall back to copper_llm_model
 
     # ── LLM — Ollama ────────────────────────────────────────────────
     copper_ollama_base_url: str = "http://localhost:11434"
@@ -68,11 +68,11 @@ class Settings(CoreSettings):
 
     # ── LLM — OpenAI ────────────────────────────────────────────────
     copper_openai_api_key: str = ""
-    copper_openai_base_url: str = ""    # empty = OpenAI default endpoint
+    copper_openai_base_url: str = ""  # empty = OpenAI default endpoint
     copper_openai_timeout: int = 300
 
     # ── Storage ─────────────────────────────────────────────────────
-    copper_minds_dir: str = ""          # empty → ~/.copper/minds
+    copper_minds_dir: str = ""  # empty → ~/.copper/minds
 
     # ── API server ──────────────────────────────────────────────────
     copper_host: str = "127.0.0.1"
@@ -82,7 +82,11 @@ class Settings(CoreSettings):
     @property
     def minds_path(self) -> Path:
         """Resolved path to the copperminds directory (created if absent)."""
-        p = Path(self.copper_minds_dir) if self.copper_minds_dir else Path.home() / ".copper" / "minds"
+        p = (
+            Path(self.copper_minds_dir)
+            if self.copper_minds_dir
+            else Path.home() / ".copper" / "minds"
+        )
         p.mkdir(parents=True, exist_ok=True)
         return p
 

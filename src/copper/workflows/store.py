@@ -57,6 +57,7 @@ class StoreWorkflow:
         raw_path = self.mind.raw_dir / source_path.name
         if source_path.resolve() != raw_path.resolve():
             import shutil
+
             shutil.copy2(source_path, raw_path)
 
         source_name = raw_path.name
@@ -64,7 +65,8 @@ class StoreWorkflow:
 
         registry = default_registry()
         chunks = registry.to_chunks(
-            raw_path, MAX_CHUNK_CHARS,
+            raw_path,
+            MAX_CHUNK_CHARS,
             llm=self.llm,
             image_describer=self.image_describer,
         )
@@ -81,13 +83,18 @@ class StoreWorkflow:
         for i, chunk in enumerate(chunks, 1):
             chunk_label = f"parte {i}/{total_chunks}" if total_chunks > 1 else None
             if chunk_label:
-                logger.info(f"[store] Processing chunk {i}/{total_chunks} ({len(chunk):,} chars)...")
+                logger.info(
+                    f"[store] Processing chunk {i}/{total_chunks} ({len(chunk):,} chars)..."
+                )
 
             # Refresh index each iteration so the LLM sees pages created by previous chunks
             index_content = self.wiki.read_index()
             existing_slugs = [p.name for p in self.wiki.all_pages()]
             prompt = _build_store_prompt(
-                schema, source_name, chunk, index_content,
+                schema,
+                source_name,
+                chunk,
+                index_content,
                 chunk_label=chunk_label,
                 existing_slugs=existing_slugs,
             )
@@ -110,12 +117,15 @@ class StoreWorkflow:
             "store",
             f"Fuente '{source_name}' almacenada → {len(all_pages)} páginas actualizadas",
         )
-        logger.info(f"[store] Done: '{source_name}' → {len(all_pages)} pages, {total_tokens} tokens")
+        logger.info(
+            f"[store] Done: '{source_name}' → {len(all_pages)} pages, {total_tokens} tokens"
+        )
 
         # After multi-chunk ingestion, run polish to consolidate duplicates and fix gaps
         if total_chunks > 1:
             logger.info(f"[store] Running consolidation polish ({len(all_pages)} wiki pages)...")
             from copper.workflows.polish import PolishWorkflow
+
             polish_result = PolishWorkflow(self.mind, self.llm).run()
             total_tokens += polish_result.tokens_used
             total_cost += polish_result.cost_usd
@@ -132,7 +142,6 @@ class StoreWorkflow:
         )
 
 
-
 def _build_store_prompt(
     schema: str,
     source_name: str,
@@ -141,7 +150,11 @@ def _build_store_prompt(
     chunk_label: str | None = None,
     existing_slugs: list[str] | None = None,
 ) -> str:
-    chunk_note = f"\n> Nota: este texto es la {chunk_label} del documento. Integra el conocimiento con lo ya existente en el wiki.\n" if chunk_label else ""
+    chunk_note = (
+        f"\n> Nota: este texto es la {chunk_label} del documento. Integra el conocimiento con lo ya existente en el wiki.\n"
+        if chunk_label
+        else ""
+    )
 
     update_note = ""
     if existing_slugs and chunk_label:
@@ -149,7 +162,7 @@ def _build_store_prompt(
         update_note = (
             f"\n## Páginas ya existentes en el wiki ({len(existing_slugs)} total)\n{slugs_str}\n\n"
             "> IMPORTANTE: Solo toca las páginas DIRECTAMENTE relevantes para este fragmento. "
-            "Actualiza (action=\"update\") si ya existe; crea (action=\"create\") si no. "
+            'Actualiza (action="update") si ya existe; crea (action="create") si no. '
             "No toques páginas no relacionadas con este fragmento.\n"
         )
 
@@ -201,7 +214,9 @@ def _apply_wiki_updates(llm_output: str, source_name: str, wiki: WikiManager) ->
     )
     for m in page_pattern.finditer(llm_output):
         slug, title, action, content = m.group(1), m.group(2), m.group(3), m.group(4).strip()
-        wiki.upsert_page(slug=slug, title=title, body=content, bump_source_count=(action == "update"))
+        wiki.upsert_page(
+            slug=slug, title=title, body=content, bump_source_count=(action == "update")
+        )
         pages_written.append(slug)
 
     index_match = re.search(r"<index>(.*?)</index>", llm_output, re.DOTALL)
@@ -218,7 +233,9 @@ def _apply_wiki_updates(llm_output: str, source_name: str, wiki: WikiManager) ->
 
 
 class StoreResult:
-    def __init__(self, source: str, pages_written: list[str], tokens_used: int, cost_usd: float = 0.0):
+    def __init__(
+        self, source: str, pages_written: list[str], tokens_used: int, cost_usd: float = 0.0
+    ):
         self.source = source
         self.pages_written = pages_written
         self.tokens_used = tokens_used

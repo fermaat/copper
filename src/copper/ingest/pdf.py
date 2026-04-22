@@ -10,7 +10,6 @@ from core_utils.logger import logger
 
 from copper.ingest.base import IngestPlugin, naive_split
 
-
 # Matches common TOC header labels (case-insensitive, whole line)
 _TOC_HEADER = re.compile(
     r"^\s*(table\s+of\s+contents|contents|index|índice|contenido|tabla\s+de\s+contenidos?)\s*$",
@@ -130,8 +129,12 @@ class PDFPlugin(IngestPlugin):
                 if combined:
                     result.append((i, combined))
                 if i % 50 == 0 or i == total:
-                    extra = f", {total_images_described} images described" if image_describer else ""
-                    logger.info(f"[pdf] Extracted {i}/{total} pages ({len(result)} with text{extra})...")
+                    extra = (
+                        f", {total_images_described} images described" if image_describer else ""
+                    )
+                    logger.info(
+                        f"[pdf] Extracted {i}/{total} pages ({len(result)} with text{extra})..."
+                    )
         return result
 
     @staticmethod
@@ -146,6 +149,7 @@ class PDFPlugin(IngestPlugin):
             return "", 0
 
         import io
+
         descriptions: list[str] = []
         described = 0
 
@@ -199,7 +203,7 @@ class PDFPlugin(IngestPlugin):
                 # Pad or trim to match header column count
                 while len(cells) < len(header):
                     cells.append("")
-                parts.append("| " + " | ".join(cells[:len(header)]) + " |")
+                parts.append("| " + " | ".join(cells[: len(header)]) + " |")
             parts.append("")  # blank line between tables
         return "\n".join(parts)
 
@@ -219,7 +223,9 @@ class PDFPlugin(IngestPlugin):
         # title is found inside the TOC itself, producing dozens of tiny chunks.
         toc_anchor = full_text.lower().find(toc_text[:80].lower())
         search_offset = toc_anchor + len(toc_text) if toc_anchor != -1 else 0
-        logger.info(f"[pdf] TOC found: {len(titles)} titles, searching from offset {search_offset:,}")
+        logger.info(
+            f"[pdf] TOC found: {len(titles)} titles, searching from offset {search_offset:,}"
+        )
         return self._split_by_titles(full_text, titles, max_chars, search_offset=search_offset)
 
     def _find_toc_page(self, pages: list[tuple[int, str]]) -> str | None:
@@ -270,8 +276,7 @@ class PDFPlugin(IngestPlugin):
         anchors.append(len(full_text))
 
         raw_chunks = [
-            full_text[anchors[i]: anchors[i + 1]].strip()
-            for i in range(len(anchors) - 1)
+            full_text[anchors[i] : anchors[i + 1]].strip() for i in range(len(anchors) - 1)
         ]
 
         result: list[str] = []
@@ -284,9 +289,7 @@ class PDFPlugin(IngestPlugin):
                 result.extend(naive_split(chunk, max_chars))
         return result
 
-    def _chunks_from_llm(
-        self, full_text: str, max_chars: int, llm: Any
-    ) -> list[str]:
+    def _chunks_from_llm(self, full_text: str, max_chars: int, llm: Any) -> list[str]:
         """Ask the LLM to identify section titles from the document opening."""
         from copper.llm.base import Message
 
@@ -299,7 +302,7 @@ class PDFPlugin(IngestPlugin):
             return []
 
         titles = [
-            line[len("SECTION:"):].strip()
+            line[len("SECTION:") :].strip()
             for line in response.text.splitlines()
             if line.upper().startswith("SECTION:")
         ]
