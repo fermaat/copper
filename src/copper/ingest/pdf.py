@@ -105,12 +105,42 @@ class PDFPlugin(IngestPlugin):
             total = len(pdf.pages)
             logger.info(f"[pdf] Opening '{path.name}' — {total} pages")
             for i, page in enumerate(pdf.pages, 1):
-                text = page.extract_text()
-                if text and text.strip():
-                    result.append((i, text.strip()))
+                text = page.extract_text() or ""
+                tables_md = self._extract_tables_as_markdown(page)
+                combined = (text.strip() + "\n\n" + tables_md).strip() if tables_md else text.strip()
+                if combined:
+                    result.append((i, combined))
                 if i % 50 == 0 or i == total:
                     logger.info(f"[pdf] Extracted {i}/{total} pages ({len(result)} with text)...")
         return result
+
+    @staticmethod
+    def _extract_tables_as_markdown(page) -> str:
+        """Extract tables from a PDF page and render them as markdown."""
+        try:
+            tables = page.extract_tables()
+        except Exception:
+            return ""
+        if not tables:
+            return ""
+
+        parts: list[str] = []
+        for table in tables:
+            rows = [r for r in table if r and any(cell for cell in r)]
+            if len(rows) < 2:
+                continue
+            # First row as header
+            header = [str(cell or "").strip() for cell in rows[0]]
+            parts.append("| " + " | ".join(header) + " |")
+            parts.append("| " + " | ".join("---" for _ in header) + " |")
+            for row in rows[1:]:
+                cells = [str(cell or "").strip().replace("\n", " ") for cell in row]
+                # Pad or trim to match header column count
+                while len(cells) < len(header):
+                    cells.append("")
+                parts.append("| " + " | ".join(cells[:len(header)]) + " |")
+            parts.append("")  # blank line between tables
+        return "\n".join(parts)
 
     def _chunks_from_toc(
         self,
