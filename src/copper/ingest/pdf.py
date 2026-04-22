@@ -115,7 +115,9 @@ class PDFPlugin(IngestPlugin):
                 + (" (multimodal enabled)" if image_describer else "")
             )
             for i, page in enumerate(pdf.pages, 1):
-                text = (page.extract_text() or "").strip()
+                # layout=True preserves horizontal positioning so multi-column
+                # pages (prose + stat blocks, etc.) don't get interleaved.
+                text = (page.extract_text(layout=True) or "").strip()
                 tables_md = self._extract_tables_as_markdown(page)
                 images_md = ""
                 if image_describer is not None:
