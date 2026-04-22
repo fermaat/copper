@@ -162,7 +162,17 @@ class PDFPlugin(IngestPlugin):
                 continue
 
             try:
-                bbox = (img["x0"], img["top"], img["x1"], img["bottom"])
+                # Clamp bbox to page bounds — pdfplumber often reports image
+                # boxes slightly outside the page due to float rounding.
+                px0, py0, px1, py1 = page.bbox
+                bbox = (
+                    max(float(img["x0"]), px0),
+                    max(float(img["top"]), py0),
+                    min(float(img["x1"]), px1),
+                    min(float(img["bottom"]), py1),
+                )
+                if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
+                    continue  # degenerate after clamping
                 crop = page.within_bbox(bbox)
                 pil_img = crop.to_image(resolution=150).original
                 buf = io.BytesIO()
