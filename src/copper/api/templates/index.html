@@ -361,7 +361,43 @@
 
       currentPage = { slug, body: data.body, frontmatter: data.frontmatter };
       titleEl.textContent = data.frontmatter?.title || slug;
-      bodyEl.innerHTML = marked.parse(data.body);
+      const enriched = enrichVisualMarkers(data.body, currentMind);
+      bodyEl.innerHTML = marked.parse(enriched);
+    }
+
+    // Replace [Visual on page N, image M: desc] markers with real <figure> tags
+    // pointing at the saved image. Source is inferred from the first [Source: X]
+    // citation found on the page — copperminds typically derive a wiki page
+    // from a single source, so this matches ~everywhere.
+    function enrichVisualMarkers(markdown, mindName) {
+      const sourceMatch = markdown.match(/\[Source:\s*([^\]]+?)\]/);
+      if (!sourceMatch) {
+        return markdown;  // no source cited → can't locate the image file
+      }
+      const sourceSlug = toSlug(sourceMatch[1].trim());
+
+      const visualRegex = /\[Visual on page (\d+), image (\d+):\s*([^\]]+?)\]/g;
+      return markdown.replace(visualRegex, (_match, page, img, desc) => {
+        const safeDesc = desc.trim().replace(/"/g, '&quot;');
+        const url = `/minds/${mindName}/images/${sourceSlug}-p${page}-img${img}.png`;
+        return (
+          `\n\n<figure class="wiki-figure">` +
+          `<img src="${url}" alt="${safeDesc}" loading="lazy" ` +
+          `onerror="this.parentElement.classList.add('wiki-figure-missing')">` +
+          `<figcaption>Page ${page} — ${desc.trim()}</figcaption>` +
+          `</figure>\n\n`
+        );
+      });
+    }
+
+    // Mirrors the slug used by _to_slug on the backend (lowercase, drop
+    // non-word chars, spaces/underscores → dashes).
+    function toSlug(text) {
+      return text
+        .toLowerCase()
+        .trim()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/[\s_]+/g, '-');
     }
 
     function enterEditMode() {

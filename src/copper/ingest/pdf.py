@@ -58,17 +58,31 @@ class PDFPlugin(IngestPlugin):
     def can_handle(self, path: Path) -> bool:
         return path.suffix.lower() == ".pdf"
 
-    def to_markdown(self, path: Path, image_describer: Any = None) -> str:
-        pages = self._extract_pages(path, image_describer=image_describer)
+    def to_markdown(
+        self,
+        path: Path,
+        image_describer: Any = None,
+        image_save_dir: Path | None = None,
+    ) -> str:
+        pages = self._extract_pages(
+            path, image_describer=image_describer, image_save_dir=image_save_dir
+        )
         if not pages:
             return f"<!-- PDF '{path.name}' contains no extractable text -->"
         return "\n\n---\n\n".join(f"<!-- Page {i} -->\n\n{text}" for i, text in pages)
 
     def to_chunks(
-        self, path: Path, max_chars: int, llm: Any = None, image_describer: Any = None
+        self,
+        path: Path,
+        max_chars: int,
+        llm: Any = None,
+        image_describer: Any = None,
+        image_save_dir: Path | None = None,
     ) -> list[str]:
         """Hybrid chunking: TOC keyword → TOC pattern → LLM → naive split."""
-        pages = self._extract_pages(path, image_describer=image_describer)
+        pages = self._extract_pages(
+            path, image_describer=image_describer, image_save_dir=image_save_dir
+        )
         if not pages:
             return [f"<!-- PDF '{path.name}' contains no extractable text -->"]
 
@@ -102,7 +116,12 @@ class PDFPlugin(IngestPlugin):
     # Internal helpers                                                    #
     # ------------------------------------------------------------------ #
 
-    def _extract_pages(self, path: Path, image_describer: Any = None) -> list[tuple[int, str]]:
+    def _extract_pages(
+        self,
+        path: Path,
+        image_describer: Any = None,
+        image_save_dir: Path | None = None,
+    ) -> list[tuple[int, str]]:
         try:
             import pdfplumber
         except ImportError:
@@ -112,6 +131,12 @@ class PDFPlugin(IngestPlugin):
             )
         import time
 
+        from copper.core.wiki import _to_slug
+
+        source_slug = _to_slug(path.stem)
+        if image_save_dir is not None:
+            image_save_dir.mkdir(parents=True, exist_ok=True)
+
         result: list[tuple[int, str]] = []
         total_images_described = 0
         with pdfplumber.open(path) as pdf:
@@ -119,6 +144,7 @@ class PDFPlugin(IngestPlugin):
             logger.info(
                 f"[pdf] Opening '{path.name}' — {total} pages"
                 + (" (multimodal enabled)" if image_describer else "")
+                + (" (saving images)" if image_save_dir else "")
             )
             for i, page in enumerate(pdf.pages, 1):
                 page_start = time.monotonic()
@@ -129,7 +155,7 @@ class PDFPlugin(IngestPlugin):
                 images_md = ""
                 if image_describer is not None:
                     images_md, img_stats = self._extract_images_as_markdown(
-                        page, text, image_describer
+                        page, text, image_describer, source_slug, image_save_dir
                     )
                     total_images_described += img_stats["described"]
                     elapsed = time.monotonic() - page_start
@@ -162,9 +188,17 @@ class PDFPlugin(IngestPlugin):
 
     @staticmethod
     def _extract_images_as_markdown(
-        page, context_text: str, describer: Any
+        page,
+        context_text: str,
+        describer: Any,
+        source_slug: str = "",
+        save_dir: Path | None = None,
     ) -> tuple[str, dict[str, int]]:
         """Extract images that pass the heuristic filter and describe them.
+
+        If ``save_dir`` is provided, the cropped PNG of each described image is
+        saved to ``<save_dir>/<source_slug>-pN-imgM.png`` so the UI can render
+        it alongside the description marker.
 
         Returns (markdown_block, stats) where stats is a dict with keys:
         raw, filtered, described, decorative, failed.
@@ -217,9 +251,19 @@ class PDFPlugin(IngestPlugin):
             elif desc == "":
                 stats["decorative"] += 1
             else:
+                # Save the PNG to disk so the UI can render it next to the
+                # description. The filename encodes source + page + image index
+                # so later renders can look it up via the marker alone.
+                if save_dir is not None and source_slug:
+                    image_filename = f"{source_slug}-p{page.page_number}-img{idx}.png"
+                    try:
+                        (save_dir / image_filename).write_bytes(image_bytes)
+                    except OSError as exc:
+                        logger.warning(f"[pdf] Could not save image {image_filename}: {exc}")
                 # Structured marker that survives the store LLM's rewrites —
                 # parallel to [Source: ...] which is already preserved verbatim.
-                descriptions.append(f"[Visual on page {page.page_number}: {desc}]")
+                # The image index lets the UI match this marker to the saved file.
+                descriptions.append(f"[Visual on page {page.page_number}, image {idx}: {desc}]")
                 stats["described"] += 1
 
         return ("\n\n".join(descriptions), stats)

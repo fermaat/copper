@@ -30,7 +30,12 @@ class ObsidianPlugin(IngestPlugin):
     def can_handle(self, path: Path) -> bool:
         return path.suffix.lower() == ".md"
 
-    def to_markdown(self, path: Path, image_describer: Any = None) -> str:
+    def to_markdown(
+        self,
+        path: Path,
+        image_describer: Any = None,
+        image_save_dir: Any = None,
+    ) -> str:
         content = path.read_text(encoding="utf-8", errors="replace")
         content = _EMBED.sub("", content)
         content = _WIKILINK_ALIASED.sub(r"\2", content)

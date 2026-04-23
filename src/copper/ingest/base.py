@@ -15,22 +15,35 @@ class IngestPlugin(ABC):
         """Return True if this plugin knows how to process *path*."""
 
     @abstractmethod
-    def to_markdown(self, path: Path, image_describer: Any = None) -> str:
+    def to_markdown(
+        self,
+        path: Path,
+        image_describer: Any = None,
+        image_save_dir: Any = None,
+    ) -> str:
         """Read *path* and return its content as a markdown string.
 
-        *image_describer* is optional and only consumed by plugins that can
-        extract images (PDF). Others ignore it.
+        *image_describer* and *image_save_dir* are optional and only consumed
+        by plugins that can extract images (PDF). Others ignore them.
         """
 
     def to_chunks(
-        self, path: Path, max_chars: int, llm: Any = None, image_describer: Any = None
+        self,
+        path: Path,
+        max_chars: int,
+        llm: Any = None,
+        image_describer: Any = None,
+        image_save_dir: Any = None,
     ) -> list[str]:
         """Split *path* content into chunks of at most *max_chars*.
 
         Default: convert to markdown then split naively at paragraph boundaries.
         Subclasses may override for smarter, format-aware splitting.
         """
-        return naive_split(self.to_markdown(path, image_describer=image_describer), max_chars)
+        return naive_split(
+            self.to_markdown(path, image_describer=image_describer, image_save_dir=image_save_dir),
+            max_chars,
+        )
 
 
 def naive_split(text: str, max_chars: int) -> list[str]:

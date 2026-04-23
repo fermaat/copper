@@ -84,11 +84,18 @@ class StoreWorkflow:
         logger.info(f"[store] Extracting text from '{source_name}'...")
 
         registry = default_registry()
+        # When multimodal is active and the image-save setting is on, persist
+        # described images to <mind>/raw/images/ so the UI can render them.
+        image_save_dir: Path | None = None
+        if self.image_describer is not None and settings.copper_ingest_save_images:
+            image_save_dir = self.mind.raw_dir / "images"
+
         chunks = registry.to_chunks(
             raw_path,
             MAX_CHUNK_CHARS,
             llm=self.llm,
             image_describer=self.image_describer,
+            image_save_dir=image_save_dir,
         )
 
         char_count = sum(len(c) for c in chunks)
@@ -220,9 +227,11 @@ Important rules:
 - Add [[backlinks]] where appropriate.
 - Cite sources as [Source: {source_name}].
 - Mark contradictions when present.
-- PRESERVE `[Visual on page N: ...]` markers verbatim when they add useful visual
-  information (colours, anatomy, scenes, diagrams). They are descriptions of
-  figures from the original document and carry knowledge absent from the prose.
+- PRESERVE `[Visual on page N, image M: ...]` markers verbatim when they add
+  useful visual information (colours, anatomy, scenes, diagrams). They are
+  descriptions of figures from the original document and carry knowledge
+  absent from the prose. The UI uses the page/image index to render the
+  actual figure alongside the description — do NOT rephrase or strip them.
 - LANGUAGE: write the wiki content in the SAME LANGUAGE as the source text
   above. Do not translate.
 """

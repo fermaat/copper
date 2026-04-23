@@ -116,6 +116,34 @@ class TestMindsRoutes:
         res = client.put("/minds/test-mind/wiki/nonexistent", json={"body": "x"})
         assert res.status_code == 404
 
+    def test_get_mind_image_missing(self, client, mind_in_db):
+        res = client.get("/minds/test-mind/images/nonexistent-p1-img0.png")
+        assert res.status_code == 404
+
+    def test_get_mind_image_rejects_traversal(self, client, mind_in_db):
+        res = client.get("/minds/test-mind/images/..%2Fsecret")
+        # Either URL decoding catches the traversal (400) or FastAPI routes the
+        # raw path (404). Both are acceptable — just not 200.
+        assert res.status_code in (400, 404)
+
+    def test_get_mind_image_serves_existing(self, client, mind_in_db):
+        images_dir = mind_in_db.raw_dir / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+        # 1x1 PNG magic bytes
+        png_bytes = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+            b"\x00\x00\x00\x01\x00\x00\x00\x01"
+            b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+            b"\x00\x00\x00\rIDATx\x9cc\xf8\xff\xff?"
+            b"\x00\x05\xfe\x02\xfe\xa7\x9a\x9c\xd4"
+            b"\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        (images_dir / "demo-p1-img0.png").write_bytes(png_bytes)
+
+        res = client.get("/minds/test-mind/images/demo-p1-img0.png")
+        assert res.status_code == 200
+        assert res.headers["content-type"].startswith("image/")
+
 
 # ------------------------------------------------------------------ #
 # Linking via API                                                     #

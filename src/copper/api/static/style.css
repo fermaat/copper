@@ -135,6 +135,37 @@ label { font-size: 0.7rem; color: var(--text-dim); display: block; margin-bottom
 }
 .page-editor:focus { outline: none; border-color: var(--copper); }
 
+/* Figures rendered from [Visual on page N, image M: ...] markers */
+.wiki-figure {
+  margin: 1rem 0;
+  padding: 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--copper-dark);
+  border-radius: 4px;
+  text-align: center;
+}
+.wiki-figure img {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 3px;
+  display: inline-block;
+}
+.wiki-figure figcaption {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-style: italic;
+  margin-top: 0.5rem;
+  padding: 0 0.5rem;
+}
+/* Fallback when the image file is missing on disk — hide the broken img and
+   keep the caption visible as a cosmere-flavour dim note. */
+.wiki-figure-missing img { display: none; }
+.wiki-figure-missing { border-style: dashed; opacity: 0.6; }
+.wiki-figure-missing::before {
+  content: "(figure not saved)";
+  display: block; color: var(--text-dim); font-size: 0.7rem;
+}
+
 /* HTMX indicator */
 .htmx-indicator { display: none; color: var(--copper); font-size: 0.75rem; }
 .htmx-request .htmx-indicator { display: inline; }

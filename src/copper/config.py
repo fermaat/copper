@@ -87,6 +87,9 @@ class Settings(CoreSettings):
     copper_pdf_min_image_width: int = 120
     copper_pdf_min_image_height: int = 120
     copper_pdf_min_image_area: int = 40_000  # px²
+    # Persist described images to disk so the UI can render them alongside
+    # descriptions. Images live in <mind>/raw/images/.
+    copper_ingest_save_images: bool = True
 
     # ── API server ──────────────────────────────────────────────────
     copper_host: str = "127.0.0.1"

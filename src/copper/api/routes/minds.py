@@ -105,6 +105,26 @@ def list_wiki_pages(name: str):
     return [p.stem for p in mind.wiki_pages()]
 
 
+@router.get("/{name}/images/{filename}")
+def get_mind_image(name: str, filename: str):
+    """Serve an image extracted during PDF ingestion.
+
+    Images live under ``<mind>/raw/images/<filename>`` and are referenced from
+    wiki pages via ``[Visual on page N, image M: ...]`` markers. The UI
+    post-processes those markers to produce <img> tags pointing here.
+    """
+    from fastapi.responses import FileResponse
+
+    mind = _get_or_404(name)
+    # Restrict to bare filenames — no traversal outside the images folder.
+    if "/" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid image filename.")
+    image_path = mind.raw_dir / "images" / filename
+    if not image_path.exists() or not image_path.is_file():
+        raise HTTPException(status_code=404, detail=f"Image '{filename}' not found.")
+    return FileResponse(image_path)
+
+
 @router.get("/{name}/wiki/{slug}")
 def get_wiki_page(name: str, slug: str):
     """Read a specific wiki page. ``body`` is the markdown without frontmatter."""

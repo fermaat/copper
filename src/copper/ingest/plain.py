@@ -53,5 +53,10 @@ class PlainTextPlugin(IngestPlugin):
         except (UnicodeDecodeError, OSError):
             return False
 
-    def to_markdown(self, path: Path, image_describer: Any = None) -> str:
+    def to_markdown(
+        self,
+        path: Path,
+        image_describer: Any = None,
+        image_save_dir: Any = None,
+    ) -> str:
         return path.read_text(encoding="utf-8", errors="replace")
