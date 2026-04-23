@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from core_utils.logger import logger
 
+from copper.config import settings
 from copper.core.coppermind import CopperMind
 from copper.core.wiki import WikiManager
 from copper.ingest.registry import default_registry
@@ -22,10 +23,8 @@ if TYPE_CHECKING:
     from copper.ingest.image_describer import ImageDescriber
 
 
-# Maximum characters sent to the LLM in a single call.
-# ~15 000 chars ≈ 3 750 tokens; leaves room for schema + index overhead.
-# Override with COPPER_MAX_CHUNK_CHARS env var (via Settings) if needed.
-MAX_CHUNK_CHARS = 15_000
+# Maximum characters sent to the LLM per chunk. Override via COPPER_STORE_MAX_CHUNK_CHARS.
+MAX_CHUNK_CHARS = settings.copper_store_max_chunk_chars
 
 STORE_SYSTEM = """\
 Eres el Archivista de una mentecobre. Tu misión es mantener un wiki estructurado en markdown.

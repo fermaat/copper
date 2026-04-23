@@ -8,6 +8,7 @@ from typing import Any
 
 from core_utils.logger import logger
 
+from copper.config import settings
 from copper.ingest.base import IngestPlugin, naive_split
 
 # Matches common TOC header labels (case-insensitive, whole line)
@@ -31,10 +32,11 @@ _TOC_SCAN_PAGES = 15
 # Characters sent to the LLM for section boundary detection
 _LLM_SAMPLE_CHARS = 4_000
 
-# Heuristic filter for image extraction — skip small/decorative images
-_MIN_IMAGE_WIDTH = 120
-_MIN_IMAGE_HEIGHT = 120
-_MIN_IMAGE_AREA = 40_000  # px², filters icons, borders, small ornaments
+# Heuristic filter for image extraction — skip small/decorative images.
+# Source of truth in Settings (override via env vars).
+_MIN_IMAGE_WIDTH = settings.copper_pdf_min_image_width
+_MIN_IMAGE_HEIGHT = settings.copper_pdf_min_image_height
+_MIN_IMAGE_AREA = settings.copper_pdf_min_image_area
 
 _LLM_SECTION_PROMPT = """\
 The following is the beginning of a document. Identify its main chapters or sections.

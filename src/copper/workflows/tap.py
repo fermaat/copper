@@ -3,17 +3,27 @@ Tap workflow — extract knowledge from the coppermind.
 
 Reads the wiki (compiled knowledge) to answer a question.
 Supports querying one or multiple copperminds simultaneously.
+
+Page selection is delegated to a :class:`Retriever` from ``copper.retrieval``
+so future strategies (BM25, embeddings, re-rankers) plug in without touching
+this workflow.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from core_utils.logger import logger
 
 from copper.core.coppermind import CopperMind
 from copper.core.wiki import WikiManager
 from copper.llm.base import LLMBase, LLMResponse, Message
+from copper.retrieval import Retriever, build_default_retriever
+
+if TYPE_CHECKING:
+    pass
+
 
 TAP_SYSTEM = """\
 You are the Archivist of one or more copperminds. You answer questions based
@@ -31,65 +41,38 @@ When consulting multiple copperminds:
 If your answer reveals new insights, offer to save them to the wiki.
 """
 
-_SELECT_SYSTEM = """\
-You are a wiki librarian. Given a question and a wiki index, identify which pages
-contain information relevant to answering the question.
-Return ONLY a list of page slugs — one per line, prefixed with "PAGE: ".
-Do not answer the question. Do not explain your choices. Just list the slugs.
-"""
-
-# Maximum pages Phase 1 LLM can pick. Keeps context bounded.
-_MAX_PAGES = 12
-
-# Hard ceiling on total pages sent to Phase 2 after keyword augmentation.
-_MAX_PAGES_TOTAL = 20
-
-# Tiny stopword list for keyword extraction — short words are already excluded by length.
-_STOPWORDS = {
-    "what", "when", "where", "which", "while", "with", "this", "that",
-    "they", "them", "their", "there", "then", "than", "have", "has",
-    "been", "does", "doing", "done", "from", "into", "some", "other",
-    "such", "more", "most", "many", "much", "each", "about", "against",
-    "between", "through", "during", "before", "after", "above", "below",
-    "here", "should", "would", "could", "must", "will", "shall",
-    "how", "why", "who", "whose", "whom",
-}
-
 
 class TapWorkflow:
     """Answers a question using the compiled wiki."""
 
-    def __init__(self, minds: list[CopperMind], llm: LLMBase):
+    def __init__(
+        self,
+        minds: list[CopperMind],
+        llm: LLMBase,
+        retriever: Retriever | None = None,
+    ):
         self.minds = minds
         self.llm = llm
+        # Default retriever uses the same LLM for Phase 1 + keyword augmentation,
+        # configured from Settings. Callers can inject a custom retriever for tests
+        # or for future BM25/embedding pipelines.
+        self.retriever = retriever or build_default_retriever(llm)
 
     def run(self, question: str, save_to_outputs: bool = False) -> TapResult:
         mind_names = ", ".join(m.name for m in self.minds)
         logger.info(f"[tap] Question: '{question[:80]}' | minds: [{mind_names}]")
 
-        total_tokens = 0
-        total_cost = 0.0
+        # Phase 1: retrieval — which pages should we read?
+        logger.info("[tap] Phase 1: retrieving relevant pages...")
+        retrieval = self.retriever.retrieve(question, self.minds)
+        for mind_name, slugs in retrieval.selected.items():
+            logger.info(f"[tap] Phase 1 [{mind_name}]: {len(slugs)} pages → {slugs}")
 
-        # Phase 1: select relevant pages by scanning indexes only
-        logger.info("[tap] Phase 1: selecting relevant pages from indexes...")
-        selected: dict[str, list[str]] = {}  # mind_name → [slug, ...]
-        for mind in self.minds:
-            wiki = WikiManager(mind.wiki_dir)
-            index = wiki.read_index()
-            slugs, sel_tokens, sel_cost = _select_pages(index, mind.name, question, self.llm)
-            total_tokens += sel_tokens
-            total_cost += sel_cost
-            logger.info(f"[tap] Phase 1 [{mind.name}]: LLM picked {len(slugs)} → {slugs}")
-
-            # Safety net: add pages whose slug/title literally matches question keywords.
-            augmented = _augment_with_keywords(wiki, question, slugs, _MAX_PAGES_TOTAL)
-            added = augmented[len(slugs):]
-            if added:
-                logger.info(f"[tap] Phase 1 [{mind.name}]: keyword augment added {len(added)} → {added}")
-            selected[mind.name] = augmented
+        total_tokens = retrieval.tokens_used
+        total_cost = retrieval.cost_usd
 
         # Phase 2: build context from selected pages and answer the question
-        context = _build_context(self.minds, selected)
+        context = _build_context(self.minds, retrieval.selected)
         multi = len(self.minds) > 1
         prompt = _build_tap_prompt(context, question, multi=multi)
 
@@ -125,100 +108,8 @@ class TapWorkflow:
         )
 
 
-def _extract_keywords(question: str) -> list[str]:
-    """Extract content-bearing keywords from a question for slug matching.
-
-    Lowercases, splits on non-word chars, drops short words and stopwords,
-    and applies a very simple plural stem so 'characters' matches 'character'.
-    """
-    import re
-
-    stems: list[str] = []
-    seen: set[str] = set()
-    for raw in re.findall(r"[a-zA-Z]{4,}", question.lower()):
-        if raw in _STOPWORDS:
-            continue
-        if raw.endswith("ies") and len(raw) > 4:
-            stem = raw[:-3] + "y"
-        elif raw.endswith("s") and not raw.endswith("ss") and len(raw) > 4:
-            stem = raw[:-1]
-        else:
-            stem = raw
-        if stem not in seen:
-            seen.add(stem)
-            stems.append(stem)
-    return stems
-
-
-def _augment_with_keywords(
-    wiki: WikiManager, question: str, selected_slugs: list[str], max_total: int
-) -> list[str]:
-    """Add pages whose slug or title contains any keyword from the question.
-
-    LLM-selected slugs keep priority; keyword matches fill remaining slots
-    up to ``max_total``. Returns the combined list.
-    """
-    keywords = _extract_keywords(question)
-    if not keywords:
-        return selected_slugs
-
-    already = {s.lower() for s in selected_slugs}
-    extra: list[str] = []
-
-    for page in wiki.all_pages():
-        if len(selected_slugs) + len(extra) >= max_total:
-            break
-        slug_lc = page.name.lower()
-        if slug_lc in already:
-            continue
-        title_lc = (page.frontmatter.get("title") or "").lower() if page.exists() else ""
-        haystack = slug_lc + " " + title_lc
-        if any(kw in haystack for kw in keywords):
-            extra.append(page.name)
-            already.add(slug_lc)
-
-    return selected_slugs + extra
-
-
-def _select_pages(
-    index: str, mind_name: str, question: str, llm: LLMBase
-) -> tuple[list[str], int, float]:
-    """Phase 1: ask the LLM to pick relevant page slugs from the index."""
-    prompt = f"""\
-## Wiki index for: {mind_name}
-{index}
-
-## Question
-{question}
-
-List the slugs of ALL pages that contain information relevant to answering this question.
-One slug per line, prefixed with "PAGE: ". Include every page that could contribute
-to a thorough answer — err on the side of including more rather than fewer.
-Hard limit: {_MAX_PAGES} pages.
-"""
-    messages = [
-        Message(role="system", content=_SELECT_SYSTEM),
-        Message(role="user", content=prompt),
-    ]
-    try:
-        response = llm.complete(messages)
-    except Exception as exc:
-        logger.warning(f"[tap] Phase 1 selection failed for '{mind_name}': {exc}")
-        return [], 0, 0.0
-
-    slugs = []
-    for line in response.text.splitlines():
-        stripped = line.strip()
-        if stripped.upper().startswith("PAGE:"):
-            slug = stripped[5:].strip()
-            if slug:
-                slugs.append(slug)
-
-    return slugs[:_MAX_PAGES], response.tokens_used, response.cost_usd
-
-
 def _build_context(minds: list[CopperMind], selected: dict[str, list[str]]) -> str:
-    """Build context loading only the pages selected in phase 1."""
+    """Build context loading only the pages selected by the retriever."""
     parts: list[str] = []
     for mind in minds:
         wiki = WikiManager(mind.wiki_dir)
@@ -228,12 +119,10 @@ def _build_context(minds: list[CopperMind], selected: dict[str, list[str]]) -> s
         parts.append(f"## Mentecobre: {mind.name} (tema: {mind.config.topic})")
         parts.append(f"### Índice\n{index}")
 
-        loaded = 0
         for slug in slugs:
             page = wiki.page(slug)
             if page.exists():
                 parts.append(f"### Página: {page.name}\n{page.raw}")
-                loaded += 1
             else:
                 logger.warning(f"[tap] Page '{slug}' selected but not found in '{mind.name}'")
 

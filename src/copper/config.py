@@ -74,6 +74,20 @@ class Settings(CoreSettings):
     # ── Storage ─────────────────────────────────────────────────────
     copper_minds_dir: str = ""  # empty → ~/.copper/minds
 
+    # ── Workflow tuning ─────────────────────────────────────────────
+    # Store: max chars sent to the LLM per chunk.
+    copper_store_max_chunk_chars: int = 15_000
+    # Tap: max pages Phase 1 LLM can pick from the index.
+    copper_tap_max_pages: int = 12
+    # Tap: ceiling after keyword-augmentation fill.
+    copper_tap_max_pages_total: int = 20
+
+    # ── PDF ingestion tuning ────────────────────────────────────────
+    # Heuristic filter applied before sending images to the multimodal model.
+    copper_pdf_min_image_width: int = 120
+    copper_pdf_min_image_height: int = 120
+    copper_pdf_min_image_area: int = 40_000  # px²
+
     # ── API server ──────────────────────────────────────────────────
     copper_host: str = "127.0.0.1"
     copper_port: int = 8000
