@@ -86,7 +86,7 @@ class PDFPlugin(IngestPlugin):
         # Strategy B: ask LLM to identify section boundaries
         if llm is not None:
             logger.info("[pdf] Strategy B: asking LLM for section boundaries...")
-            chunks = self._chunks_from_llm(full_text, max_chars, llm)
+            chunks = self._chunks_from_llm(pages, full_text, max_chars, llm)
             if chunks:
                 logger.info(f"[pdf] ✓ Strategy B succeeded → {len(chunks)} chunks")
                 return chunks
@@ -334,11 +334,26 @@ class PDFPlugin(IngestPlugin):
                 result.extend(naive_split(chunk, max_chars))
         return result
 
-    def _chunks_from_llm(self, full_text: str, max_chars: int, llm: Any) -> list[str]:
-        """Ask the LLM to identify section titles from the document opening."""
+    def _chunks_from_llm(
+        self, pages: list[tuple[int, str]], full_text: str, max_chars: int, llm: Any
+    ) -> list[str]:
+        """Ask the LLM to identify section titles from content-bearing pages.
+
+        Skips thin pages (cover, credits, playtester lists, blank backs) when
+        building the sample, so the LLM sees real sections from the start.
+        """
         from copper.llm.base import Message
 
-        sample = full_text[:_LLM_SAMPLE_CHARS]
+        # Pages with fewer than this many chars rarely contain section headings —
+        # they're covers, credits, legal notices, or playtester lists.
+        _MIN_CONTENT_CHARS_FOR_SAMPLE = 500
+
+        meaningful = [text for _, text in pages if len(text) >= _MIN_CONTENT_CHARS_FOR_SAMPLE]
+        if not meaningful:
+            # Fallback: use full_text if every page is thin (weird document).
+            meaningful = [full_text]
+
+        sample = "\n\n".join(meaningful)[:_LLM_SAMPLE_CHARS]
         messages = [Message(role="user", content=_LLM_SECTION_PROMPT.format(sample=sample))]
 
         try:

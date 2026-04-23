@@ -26,11 +26,32 @@ if TYPE_CHECKING:
 # Maximum characters sent to the LLM per chunk. Override via COPPER_STORE_MAX_CHUNK_CHARS.
 MAX_CHUNK_CHARS = settings.copper_store_max_chunk_chars
 
+# Number of additional attempts after the first if the LLM returns no valid XML.
+# 1 retry is usually enough; the second attempt uses a more emphatic prompt.
+_MAX_XML_RETRIES = 1
+
+# Hoisted so retry logic can quickly check "is there anything parseable here?"
+# without the side effects of _apply_wiki_updates.
+import re as _re
+
+# action is optional — gemma4 and similar sometimes omit it for new pages.
+# When missing we default to "create" in the consumer.
+_PAGE_PATTERN = _re.compile(
+    r'<page\s+slug="([^"]+)"\s+title="([^"]+)"(?:\s+action="([^"]+)")?[^>]*>\s*<content>(.*?)</content>\s*</page>',
+    _re.DOTALL,
+)
+
 STORE_SYSTEM = """\
-Eres el Archivista de una mentecobre. Tu misión es mantener un wiki estructurado en markdown.
-Lees fuentes, extraes conocimiento y lo integras en el wiki existente.
-Sigues estrictamente el schema de la mentecobre.
-Nunca modificas los ficheros de raw/. Solo escribes en wiki/.
+You are the Archivist of a coppermind (mentecobre). Your mission is to maintain a
+structured markdown wiki. You read sources, extract knowledge, and weave it into the
+existing wiki. You follow the coppermind's schema strictly. You never modify files in
+raw/ — you only write to wiki/.
+
+LANGUAGE RULE (important):
+- Write the wiki content in the SAME LANGUAGE as the source material.
+- If the source is in English, the wiki pages MUST be in English.
+- If the source is in Spanish, the wiki pages MUST be in Spanish.
+- Never translate during transcription — preserve the original language and nuance.
 """
 
 
@@ -100,16 +121,13 @@ class StoreWorkflow:
             )
 
             logger.info(f"[store] Sending to LLM ({len(prompt):,} chars in prompt)...")
-            messages = [
-                Message(role="system", content=STORE_SYSTEM),
-                Message(role="user", content=prompt),
-            ]
-            response = self.llm.complete(messages)
-            total_tokens += response.tokens_used
-            total_cost += response.cost_usd
-            logger.info(f"[store] LLM responded ({response.tokens_used} tokens)")
+            response_text, attempt_tokens, attempt_cost = _send_with_retry(
+                self.llm, STORE_SYSTEM, prompt
+            )
+            total_tokens += attempt_tokens
+            total_cost += attempt_cost
 
-            pages = _apply_wiki_updates(response.text, source_name, self.wiki)
+            pages = _apply_wiki_updates(response_text, source_name, self.wiki)
             all_pages.extend(pages)
             logger.info(
                 f"[store] Ingot {i}/{total_ingots} forged: {len(pages)} page(s) written → {pages}"
@@ -153,7 +171,8 @@ def _build_store_prompt(
     existing_slugs: list[str] | None = None,
 ) -> str:
     chunk_note = (
-        f"\n> Nota: este texto es la {chunk_label} del documento. Integra el conocimiento con lo ya existente en el wiki.\n"
+        f"\n> Note: this text is {chunk_label} of the document. "
+        f"Integrate the knowledge with what already exists in the wiki.\n"
         if chunk_label
         else ""
     )
@@ -162,64 +181,126 @@ def _build_store_prompt(
     if existing_slugs and chunk_label:
         slugs_str = ", ".join(existing_slugs)
         update_note = (
-            f"\n## Páginas ya existentes en el wiki ({len(existing_slugs)} total)\n{slugs_str}\n\n"
-            "> IMPORTANTE: Solo toca las páginas DIRECTAMENTE relevantes para este fragmento. "
-            'Actualiza (action="update") si ya existe; crea (action="create") si no. '
-            "No toques páginas no relacionadas con este fragmento.\n"
+            f"\n## Pages already in the wiki ({len(existing_slugs)} total)\n{slugs_str}\n\n"
+            "> IMPORTANT: Only touch pages DIRECTLY relevant to this fragment. "
+            'Use action="update" if the page already exists; action="create" if not. '
+            "Do not touch pages unrelated to this fragment.\n"
         )
 
     return f"""\
-## Schema de esta mentecobre
+## Coppermind schema
 {schema}
 
-## Índice actual del wiki
+## Current wiki index
 {index}
 {update_note}
-## Nueva fuente a almacenar: {source_name}{chunk_note}
+## New source to store: {source_name}{chunk_note}
 {source_text}
 
 ---
 
-Procesa esta fuente siguiendo el workflow de almacenamiento del schema.
-Devuelve las actualizaciones del wiki en el siguiente formato XML:
+Process this source following the schema's storage workflow.
+Return the wiki updates in the following XML format:
 
 <wiki_updates>
-  <page slug="nombre-de-pagina" title="Título de la Página" action="create|update">
+  <page slug="page-name" title="Page Title" action="create|update">
     <content>
-    Contenido completo de la página (sin frontmatter, lo añado yo).
+    Full page content (without frontmatter — I add that myself).
     </content>
   </page>
-  ... (repite por cada página a crear o actualizar)
+  ... (repeat for each page to create or update)
   <index>
-    Contenido completo del nuevo index.md
+    Full content of the new index.md
   </index>
 </wiki_updates>
 
-Importante:
-- Incluye entre 1 y 5 páginas (solo las más relevantes para este fragmento)
-- El slug debe ser kebab-case y descriptivo
-- Añade [[backlinks]] donde corresponda
-- Cita fuentes como [Fuente: {source_name}]
-- Marca contradicciones si las hay
-- PRESERVA los marcadores `[Visual on page N: ...]` tal cual cuando aporten
-  información visual útil (colores, anatomía, escenas, diagramas). Son
-  descripciones de figuras del documento original y añaden conocimiento
-  que no está en el texto narrativo.
+Important rules:
+- Include between 1 and 5 pages (only the most relevant for this fragment).
+- Slug must be kebab-case and descriptive.
+- Add [[backlinks]] where appropriate.
+- Cite sources as [Source: {source_name}].
+- Mark contradictions when present.
+- PRESERVE `[Visual on page N: ...]` markers verbatim when they add useful visual
+  information (colours, anatomy, scenes, diagrams). They are descriptions of
+  figures from the original document and carry knowledge absent from the prose.
+- LANGUAGE: write the wiki content in the SAME LANGUAGE as the source text
+  above. Do not translate.
 """
 
 
+def _send_with_retry(
+    llm: LLMBase, system_prompt: str, user_prompt: str, max_retries: int = _MAX_XML_RETRIES
+) -> tuple[str, int, float]:
+    """Call the LLM; retry once with a stricter prompt if no valid <page> XML appears.
+
+    Returns (final_text, total_tokens_across_all_attempts, total_cost).
+    Token/cost are accumulated across attempts so the workflow stats stay honest.
+    """
+    accumulated_text = ""
+    accumulated_tokens = 0
+    accumulated_cost = 0.0
+
+    for attempt in range(max_retries + 1):
+        if attempt == 0:
+            content = user_prompt
+        else:
+            content = (
+                user_prompt
+                + "\n\n---\n"
+                + "IMPORTANT: Your previous response did not contain valid, parseable XML.\n"
+                + "Respond now with ONLY the <wiki_updates>...</wiki_updates> structure.\n"
+                + "Requirements (all mandatory):\n"
+                + '- Every <page> tag MUST include all three attributes: slug="...", '
+                + 'title="...", action="create" (or "update" if updating).\n'
+                + "- Every <content> tag MUST be closed with </content> before </page>.\n"
+                + "- Every <page> tag MUST be closed with </page>.\n"
+                + "- The whole block MUST close with </wiki_updates>.\n"
+                + "- Do NOT wrap the response in markdown code fences (```).\n"
+                + "- Do NOT add preamble, commentary, or explanation.\n"
+                + "- Keep each page body concise enough that the full XML fits in your output budget."
+            )
+            logger.info(f"[store] Retry {attempt}/{max_retries} with stricter prompt...")
+
+        messages = [
+            Message(role="system", content=system_prompt),
+            Message(role="user", content=content),
+        ]
+        response = llm.complete(messages)
+        accumulated_tokens += response.tokens_used
+        accumulated_cost += response.cost_usd
+        accumulated_text = response.text
+        logger.info(f"[store] LLM responded ({response.tokens_used} tokens, attempt {attempt + 1})")
+
+        if _PAGE_PATTERN.search(response.text):
+            return accumulated_text, accumulated_tokens, accumulated_cost
+
+        if attempt < max_retries:
+            preview = response.text.strip().replace("\n", " ")[:500]
+            logger.warning(
+                f"[store] Attempt {attempt + 1}: no valid XML. "
+                f"Preview: {preview}{'…' if len(response.text) > 500 else ''}"
+            )
+
+    return accumulated_text, accumulated_tokens, accumulated_cost
+
+
 def _apply_wiki_updates(llm_output: str, source_name: str, wiki: WikiManager) -> list[str]:
-    """Parse <wiki_updates> XML from LLM output and write pages."""
+    """Parse <wiki_updates> XML from LLM output and write pages.
+
+    By the time this is called, ``_send_with_retry`` has already exhausted its
+    retries — so a missing XML structure here means we genuinely fall back.
+    """
     import re
 
     pages_written: list[str] = []
 
-    page_pattern = re.compile(
-        r'<page\s+slug="([^"]+)"\s+title="([^"]+)"\s+action="([^"]+)"[^>]*>\s*<content>(.*?)</content>\s*</page>',
-        re.DOTALL,
-    )
-    for m in page_pattern.finditer(llm_output):
-        slug, title, action, content = m.group(1), m.group(2), m.group(3), m.group(4).strip()
+    for m in _PAGE_PATTERN.finditer(llm_output):
+        slug, title, action, content = (
+            m.group(1),
+            m.group(2),
+            m.group(3) or "create",
+            m.group(4).strip(),
+        )
         wiki.upsert_page(
             slug=slug, title=title, body=content, bump_source_count=(action == "update")
         )
@@ -230,9 +311,14 @@ def _apply_wiki_updates(llm_output: str, source_name: str, wiki: WikiManager) ->
         wiki.update_index(index_match.group(1).strip())
 
     if not pages_written:
-        logger.warning(f"[store] LLM returned no valid XML — creating summary page")
+        # All retries exhausted. Dump a preview so the failure is debuggable.
+        preview = llm_output.strip().replace("\n", " ")[:500]
+        logger.warning(
+            f"[store] No valid XML after retries — creating fallback summary page. "
+            f"Raw output preview: {preview}{'…' if len(llm_output) > 500 else ''}"
+        )
         slug = source_name.replace(".", "-").lower()
-        wiki.upsert_page(slug=slug, title=f"Resumen: {source_name}", body=llm_output)
+        wiki.upsert_page(slug=slug, title=f"Fallback: {source_name}", body=llm_output)
         pages_written.append(slug)
 
     return pages_written

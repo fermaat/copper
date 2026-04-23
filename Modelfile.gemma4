@@ -6,6 +6,7 @@ FROM gemma4:26b
 # 26B quantized uses ~15-16 GB RAM on M4 Pro 64 GB.
 PARAMETER num_ctx 32768
 
-# Cap output tokens to prevent the model from generating XML for every existing
-# page on each call. 4096 tokens is enough for 3-5 well-written wiki pages.
-PARAMETER num_predict 4096
+# Cap output tokens. 8192 tokens gives enough headroom for 3-5 rich wiki pages
+# with visual descriptions. 4096 was causing some ingots to truncate mid-content
+# and break the XML closing tags.
+PARAMETER num_predict 8192
