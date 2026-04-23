@@ -110,16 +110,23 @@ def get_tap_llm(mind: "CopperMind") -> LLMBase:
 def get_ingest_describer(mind: "CopperMind") -> "ImageDescriber | None":
     """Return an ImageDescriber for multimodal PDF ingestion, or None if disabled.
 
-    Resolution order:
+    Resolution order (same 3-level cascade as store/tap):
       1. Per-mind override  (config.yaml: ingest_provider / ingest_model)
       2. Global ingest      (COPPER_INGEST_PROVIDER / COPPER_INGEST_MODEL)
-    If neither is set, returns None — images are skipped.
+      3. Global generic     (COPPER_LLM_PROVIDER / COPPER_LLM_MODEL)
+    If nothing resolves (e.g. the generic LLM is "mock"), returns None.
+    If the resolved model lacks vision, every describe() call will fail
+    gracefully — the stats counter logs it as `failed`.
     """
     from copper.config import settings
     from copper.ingest.image_describer import ImageDescriber
 
-    provider = mind.config.ingest_provider or settings.copper_ingest_provider
-    if not provider:
+    provider = (
+        mind.config.ingest_provider
+        or settings.copper_ingest_provider
+        or settings.copper_llm_provider
+    )
+    if not provider or provider == "mock":
         return None
 
     model = mind.config.ingest_model or settings.copper_ingest_model or settings.copper_llm_model
