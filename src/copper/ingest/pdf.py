@@ -106,6 +106,8 @@ class PDFPlugin(IngestPlugin):
                 "pdfplumber is required to ingest PDF files.\n"
                 "Install it with: pdm install -G pdf"
             )
+        import time
+
         result: list[tuple[int, str]] = []
         total_images_described = 0
         with pdfplumber.open(path) as pdf:
@@ -115,21 +117,36 @@ class PDFPlugin(IngestPlugin):
                 + (" (multimodal enabled)" if image_describer else "")
             )
             for i, page in enumerate(pdf.pages, 1):
+                page_start = time.monotonic()
                 # layout=True preserves horizontal positioning so multi-column
                 # pages (prose + stat blocks, etc.) don't get interleaved.
                 text = (page.extract_text(layout=True) or "").strip()
                 tables_md = self._extract_tables_as_markdown(page)
                 images_md = ""
                 if image_describer is not None:
-                    images_md, described = self._extract_images_as_markdown(
+                    images_md, img_stats = self._extract_images_as_markdown(
                         page, text, image_describer
                     )
-                    total_images_described += described
+                    total_images_described += img_stats["described"]
+                    elapsed = time.monotonic() - page_start
+                    if img_stats["raw"] > 0:
+                        logger.info(
+                            f"[pdf] Page {i}/{total}: "
+                            f"{len(text):,} chars, "
+                            f"{img_stats['raw']} images "
+                            f"(filtered={img_stats['filtered']}, "
+                            f"described={img_stats['described']}, "
+                            f"decorative={img_stats['decorative']}, "
+                            f"failed={img_stats['failed']}) "
+                            f"in {elapsed:.1f}s"
+                        )
 
                 parts = [p for p in (text, tables_md, images_md) if p]
                 combined = "\n\n".join(parts)
                 if combined:
                     result.append((i, combined))
+
+                # Periodic summary every 50 pages (and at the end)
                 if i % 50 == 0 or i == total:
                     extra = (
                         f", {total_images_described} images described" if image_describer else ""
@@ -140,27 +157,31 @@ class PDFPlugin(IngestPlugin):
         return result
 
     @staticmethod
-    def _extract_images_as_markdown(page, context_text: str, describer: Any) -> tuple[str, int]:
+    def _extract_images_as_markdown(
+        page, context_text: str, describer: Any
+    ) -> tuple[str, dict[str, int]]:
         """Extract images that pass the heuristic filter and describe them.
 
-        Returns (markdown_block, count_described). Images that fail the size
-        filter or that the model marks as DECORATIVE are skipped silently.
+        Returns (markdown_block, stats) where stats is a dict with keys:
+        raw, filtered, described, decorative, failed.
         """
         images = getattr(page, "images", None) or []
+        stats = {"raw": len(images), "filtered": 0, "described": 0, "decorative": 0, "failed": 0}
         if not images:
-            return "", 0
+            return "", stats
 
         import io
 
         descriptions: list[str] = []
-        described = 0
 
         for idx, img in enumerate(images):
             width = float(img.get("width") or 0)
             height = float(img.get("height") or 0)
             if width < _MIN_IMAGE_WIDTH or height < _MIN_IMAGE_HEIGHT:
+                stats["filtered"] += 1
                 continue
             if width * height < _MIN_IMAGE_AREA:
+                stats["filtered"] += 1
                 continue
 
             try:
@@ -174,6 +195,7 @@ class PDFPlugin(IngestPlugin):
                     min(float(img["bottom"]), py1),
                 )
                 if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
+                    stats["filtered"] += 1
                     continue  # degenerate after clamping
                 crop = page.within_bbox(bbox)
                 pil_img = crop.to_image(resolution=150).original
@@ -182,14 +204,19 @@ class PDFPlugin(IngestPlugin):
                 image_bytes = buf.getvalue()
             except Exception as exc:
                 logger.warning(f"[pdf] Could not crop image on page {page.page_number}: {exc}")
+                stats["failed"] += 1
                 continue
 
             desc = describer.describe(image_bytes, context_hint=context_text)
-            if desc:
+            if desc is None:
+                stats["failed"] += 1
+            elif desc == "":
+                stats["decorative"] += 1
+            else:
                 descriptions.append(f"![{desc}](page-{page.page_number}-img-{idx})")
-                described += 1
+                stats["described"] += 1
 
-        return ("\n\n".join(descriptions), described)
+        return ("\n\n".join(descriptions), stats)
 
     @staticmethod
     def _extract_tables_as_markdown(page) -> str:

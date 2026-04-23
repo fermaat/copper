@@ -36,14 +36,20 @@ class ImageDescriber:
     base_url: str = "http://localhost:11434"
     timeout: int = 120
 
-    def describe(self, image_bytes: bytes, context_hint: str = "") -> str:
-        """Return a description or empty string if the image is decorative/failed."""
+    def describe(self, image_bytes: bytes, context_hint: str = "") -> str | None:
+        """Describe an image.
+
+        Returns:
+        - text: a real description.
+        - "" : the model classified the image as DECORATIVE (skip silently).
+        - None: the underlying call failed (HTTP error, timeout, etc.).
+        """
         if self.provider == "ollama":
             return self._describe_ollama(image_bytes, context_hint)
         logger.warning(f"[image] Provider '{self.provider}' not supported for image description")
-        return ""
+        return None
 
-    def _describe_ollama(self, image_bytes: bytes, context_hint: str) -> str:
+    def _describe_ollama(self, image_bytes: bytes, context_hint: str) -> str | None:
         import httpx
 
         b64 = base64.b64encode(image_bytes).decode()
@@ -66,7 +72,7 @@ class ImageDescriber:
             text = (resp.json().get("response") or "").strip()
         except Exception as exc:
             logger.warning(f"[image] Description failed: {exc}")
-            return ""
+            return None
 
         # Model signalled the image is decorative — skip it.
         if text.upper().startswith("DECORATIVE"):
