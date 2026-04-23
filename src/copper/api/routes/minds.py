@@ -14,6 +14,7 @@ from copper.api.models import (
     GraphResponse,
     LinkRequest,
     MindSummary,
+    WikiPageUpdateRequest,
 )
 from copper.core.coppermind import CopperMind
 
@@ -106,7 +107,7 @@ def list_wiki_pages(name: str):
 
 @router.get("/{name}/wiki/{slug}")
 def get_wiki_page(name: str, slug: str):
-    """Read a specific wiki page."""
+    """Read a specific wiki page. ``body`` is the markdown without frontmatter."""
     from copper.core.wiki import WikiManager
 
     mind = _get_or_404(name)
@@ -114,7 +115,27 @@ def get_wiki_page(name: str, slug: str):
     page = wm.page(slug)
     if not page.exists():
         raise HTTPException(status_code=404, detail=f"Wiki page '{slug}' not found.")
-    return {"slug": slug, "content": page.raw, "frontmatter": page.frontmatter}
+    return {
+        "slug": slug,
+        "content": page.raw,
+        "body": page.body,
+        "frontmatter": page.frontmatter,
+    }
+
+
+@router.put("/{name}/wiki/{slug}")
+def update_wiki_page(name: str, slug: str, request: WikiPageUpdateRequest):
+    """Overwrite a wiki page body (frontmatter is preserved, last_updated refreshed)."""
+    from copper.core.wiki import WikiManager
+
+    mind = _get_or_404(name)
+    wm = WikiManager(mind.wiki_dir)
+    try:
+        page = wm.update_page(slug, request.body)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    mind.append_log("edit", f"Página '{slug}' editada manualmente")
+    return {"slug": slug, "body": page.body, "frontmatter": page.frontmatter}
 
 
 # ------------------------------------------------------------------ #

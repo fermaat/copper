@@ -26,6 +26,10 @@ class LinkRequest(BaseModel):
     name_b: str
 
 
+class WikiPageUpdateRequest(BaseModel):
+    body: str = Field(..., description="New markdown body (frontmatter is managed by the server)")
+
+
 # ------------------------------------------------------------------ #
 # Responses                                                           #
 # ------------------------------------------------------------------ #

@@ -116,9 +116,15 @@
     <div class="modal modal-wide">
       <div class="modal-header">
         <div class="modal-title" id="page-modal-title">—</div>
-        <button class="btn btn-ghost btn-sm" onclick="closePageModal()">✕ Close</button>
+        <div class="flex" style="gap:0.5rem">
+          <button class="btn btn-ghost btn-sm" id="page-edit-btn" onclick="enterEditMode()">✎ Edit</button>
+          <button class="btn btn-primary btn-sm hidden" id="page-save-btn" onclick="savePage()">Save</button>
+          <button class="btn btn-ghost btn-sm hidden" id="page-cancel-btn" onclick="cancelEdit()">Cancel</button>
+          <button class="btn btn-ghost btn-sm" onclick="closePageModal()">✕ Close</button>
+        </div>
       </div>
       <div id="page-modal-body" class="page-content"></div>
+      <textarea id="page-modal-editor" class="page-editor hidden"></textarea>
     </div>
   </div>
 
@@ -334,8 +340,10 @@
     }
 
     // ----------------------------------------------------------------
-    // Page viewer
+    // Page viewer + editor
     // ----------------------------------------------------------------
+    let currentPage = null;  // { slug, body, frontmatter }
+
     async function showPage(slug) {
       if (!currentMind) return;
       const modal = document.getElementById('page-modal');
@@ -345,17 +353,71 @@
       titleEl.textContent = slug;
       bodyEl.innerHTML = '<span class="text-dim">Loading…</span>';
       modal.classList.add('open');
+      exitEditMode();
 
       const res = await fetch(`/minds/${currentMind}/wiki/${slug}`);
       if (!res.ok) { bodyEl.textContent = 'Page not found.'; return; }
       const data = await res.json();
 
+      currentPage = { slug, body: data.body, frontmatter: data.frontmatter };
       titleEl.textContent = data.frontmatter?.title || slug;
-      bodyEl.innerHTML = marked.parse(data.content);
+      bodyEl.innerHTML = marked.parse(data.body);
+    }
+
+    function enterEditMode() {
+      if (!currentPage) return;
+      document.getElementById('page-modal-body').classList.add('hidden');
+      const editor = document.getElementById('page-modal-editor');
+      editor.value = currentPage.body;
+      editor.classList.remove('hidden');
+      document.getElementById('page-edit-btn').classList.add('hidden');
+      document.getElementById('page-save-btn').classList.remove('hidden');
+      document.getElementById('page-cancel-btn').classList.remove('hidden');
+    }
+
+    function exitEditMode() {
+      document.getElementById('page-modal-body').classList.remove('hidden');
+      document.getElementById('page-modal-editor').classList.add('hidden');
+      document.getElementById('page-edit-btn').classList.remove('hidden');
+      document.getElementById('page-save-btn').classList.add('hidden');
+      document.getElementById('page-cancel-btn').classList.add('hidden');
+    }
+
+    function cancelEdit() {
+      exitEditMode();
+    }
+
+    async function savePage() {
+      if (!currentPage || !currentMind) return;
+      const newBody = document.getElementById('page-modal-editor').value;
+      const saveBtn = document.getElementById('page-save-btn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+
+      const res = await fetch(`/minds/${currentMind}/wiki/${currentPage.slug}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: newBody }),
+      });
+
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+
+      if (!res.ok) {
+        alert('Error saving page: ' + res.status);
+        return;
+      }
+      const data = await res.json();
+      currentPage.body = data.body;
+      currentPage.frontmatter = data.frontmatter;
+      document.getElementById('page-modal-body').innerHTML = marked.parse(data.body);
+      exitEditMode();
     }
 
     function closePageModal() {
       document.getElementById('page-modal').classList.remove('open');
+      currentPage = null;
+      exitEditMode();
     }
 
     document.getElementById('page-modal').addEventListener('click', (e) => {

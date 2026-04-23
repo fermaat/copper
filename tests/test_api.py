@@ -95,6 +95,27 @@ class TestMindsRoutes:
         res = client.get("/minds/test-mind/wiki/nonexistent")
         assert res.status_code == 404
 
+    def test_update_wiki_page(self, client, mind_in_db):
+        from copper.core.wiki import WikiManager
+
+        # Seed a page
+        wm = WikiManager(mind_in_db.wiki_dir)
+        wm.create_page(slug="alpha", title="Alpha", body="Original body")
+
+        res = client.put("/minds/test-mind/wiki/alpha", json={"body": "New body content"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["slug"] == "alpha"
+        assert "New body content" in data["body"]
+
+        # Round-trip
+        got = client.get("/minds/test-mind/wiki/alpha").json()
+        assert "New body content" in got["body"]
+
+    def test_update_wiki_page_not_found(self, client, mind_in_db):
+        res = client.put("/minds/test-mind/wiki/nonexistent", json={"body": "x"})
+        assert res.status_code == 404
+
 
 # ------------------------------------------------------------------ #
 # Linking via API                                                     #
