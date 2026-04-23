@@ -1,0 +1,11 @@
+FROM gemma4:26b
+
+# Extended context window for wiki ingestion.
+# Default is 8K — at 32K the full index + slugs + chunk content fits comfortably
+# without truncation, even on large documents (300-500 pages).
+# 26B quantized uses ~15-16 GB RAM on M4 Pro 64 GB.
+PARAMETER num_ctx 32768
+
+# Cap output tokens to prevent the model from generating XML for every existing
+# page on each call. 4096 tokens is enough for 3-5 well-written wiki pages.
+PARAMETER num_predict 4096

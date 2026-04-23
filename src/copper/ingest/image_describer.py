@@ -76,5 +76,9 @@ class ImageDescriber:
 
         # Model signalled the image is decorative — skip it.
         if text.upper().startswith("DECORATIVE"):
+            logger.info("[image] → DECORATIVE (skipped)")
             return ""
+
+        preview = text.replace("\n", " ")[:150]
+        logger.info(f"[image] → {preview}{'…' if len(text) > 150 else ''}")
         return text

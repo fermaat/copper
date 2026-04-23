@@ -76,24 +76,26 @@ class PDFPlugin(IngestPlugin):
         logger.info(f"[pdf] Full text: {len(full_text):,} chars across {len(pages)} pages")
 
         # Strategy A: locate TOC page and split at section titles
-        logger.info("[pdf] Strategy A: scanning for TOC...")
+        logger.info("[pdf] Strategy A: scanning for TOC page...")
         chunks = self._chunks_from_toc(pages, full_text, max_chars)
         if chunks:
-            logger.info(f"[pdf] TOC split → {len(chunks)} chunks")
+            logger.info(f"[pdf] ✓ Strategy A succeeded → {len(chunks)} chunks")
             return chunks
+        logger.info("[pdf] ✗ Strategy A: no TOC detected, falling back")
 
         # Strategy B: ask LLM to identify section boundaries
         if llm is not None:
             logger.info("[pdf] Strategy B: asking LLM for section boundaries...")
             chunks = self._chunks_from_llm(full_text, max_chars, llm)
             if chunks:
-                logger.info(f"[pdf] LLM split → {len(chunks)} chunks")
+                logger.info(f"[pdf] ✓ Strategy B succeeded → {len(chunks)} chunks")
                 return chunks
+            logger.info("[pdf] ✗ Strategy B: LLM returned no usable titles, falling back")
 
         # Strategy C: naive character-based split
-        logger.info("[pdf] Strategy C: naive character split")
+        logger.info("[pdf] Strategy C: naive character split (fallback)")
         chunks = naive_split(full_text, max_chars)
-        logger.info(f"[pdf] Naive split → {len(chunks)} chunks")
+        logger.info(f"[pdf] ✓ Strategy C → {len(chunks)} chunks")
         return chunks
 
     # ------------------------------------------------------------------ #
@@ -215,7 +217,9 @@ class PDFPlugin(IngestPlugin):
             elif desc == "":
                 stats["decorative"] += 1
             else:
-                descriptions.append(f"![{desc}](page-{page.page_number}-img-{idx})")
+                # Structured marker that survives the store LLM's rewrites —
+                # parallel to [Source: ...] which is already preserved verbatim.
+                descriptions.append(f"[Visual on page {page.page_number}: {desc}]")
                 stats["described"] += 1
 
         return ("\n\n".join(descriptions), stats)

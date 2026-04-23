@@ -201,6 +201,10 @@ Importante:
 - Añade [[backlinks]] donde corresponda
 - Cita fuentes como [Fuente: {source_name}]
 - Marca contradicciones si las hay
+- PRESERVA los marcadores `[Visual on page N: ...]` tal cual cuando aporten
+  información visual útil (colores, anatomía, escenas, diagramas). Son
+  descripciones de figuras del documento original y añaden conocimiento
+  que no está en el texto narrativo.
 """
 
 
