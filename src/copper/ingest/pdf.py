@@ -10,6 +10,7 @@ from core_utils.logger import logger
 
 from copper.config import settings
 from copper.ingest.base import IngestPlugin, naive_split
+from copper.prompts import render_prompt
 
 # Matches common TOC header labels (case-insensitive, whole line)
 _TOC_HEADER = re.compile(
@@ -38,14 +39,7 @@ _MIN_IMAGE_WIDTH = settings.copper_pdf_min_image_width
 _MIN_IMAGE_HEIGHT = settings.copper_pdf_min_image_height
 _MIN_IMAGE_AREA = settings.copper_pdf_min_image_area
 
-_LLM_SECTION_PROMPT = """\
-The following is the beginning of a document. Identify its main chapters or sections.
-For each section write its exact title as it appears in the document — one per line,
-prefixed with "SECTION: ". Only list top-level sections (chapters), not subsections.
-
-Document excerpt:
-{sample}
-"""
+_LLM_SECTION_PROMPT_NAME = "pdf.section"
 
 
 class PDFPlugin(IngestPlugin):
@@ -398,7 +392,9 @@ class PDFPlugin(IngestPlugin):
             meaningful = [full_text]
 
         sample = "\n\n".join(meaningful)[:_LLM_SAMPLE_CHARS]
-        messages = [Message(role="user", content=_LLM_SECTION_PROMPT.format(sample=sample))]
+        messages = [
+            Message(role="user", content=render_prompt(_LLM_SECTION_PROMPT_NAME, sample=sample))
+        ]
 
         try:
             response = llm.complete(messages)

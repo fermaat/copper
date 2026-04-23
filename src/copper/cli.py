@@ -157,6 +157,14 @@ def tap(
     with_links: Annotated[
         bool, typer.Option("--with-links", "-l", help="Incluir también las mentecobres enlazadas")
     ] = False,
+    personality: Annotated[
+        Optional[str],
+        typer.Option(
+            "--personality",
+            "-p",
+            help="Personalidad (p.ej. tap.gamemaster, tap.scholar). Ver `copper personalities`.",
+        ),
+    ] = None,
 ):
     """🔍  Tap a coppermind (extract knowledge)."""
     try:
@@ -178,7 +186,7 @@ def tap(
             minds = minds + extra
 
     llm = get_tap_llm(minds[0])
-    workflow = TapWorkflow(minds, llm)
+    workflow = TapWorkflow(minds, llm, personality=personality)
 
     mind_list = ", ".join(m.name for m in minds)
     with console.status(
@@ -484,6 +492,28 @@ def watch(
         raise typer.Exit(1)
 
     console.print("[dim]El Archivista descansa. Hasta la próxima.[/dim]")
+
+
+@app.command()
+def personalities():
+    """🎭  List available tap personalities."""
+    from copper.prompts import get_prompt_manager, list_prompts
+
+    names = list_prompts(prefix="tap.")
+    if not names:
+        console.print("[yellow]No tap personalities registered.[/yellow]")
+        raise typer.Exit(0)
+
+    manager = get_prompt_manager()
+    table = Table(title="[copper]Tap personalities[/copper]", border_style="yellow")
+    table.add_column("Name", style="cyan")
+    table.add_column("Preview", style="dim")
+    for name in names:
+        tpl = manager.get(name)
+        preview = (tpl.template_str.strip().splitlines() or [""])[0][:80] if tpl else ""
+        table.add_row(name, preview)
+    console.print(table)
+    console.print('\n[dim]Use with: [bold]copper tap <mind> "<question>" -p <name>[/bold][/dim]')
 
 
 @app.command()

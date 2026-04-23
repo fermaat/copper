@@ -1,0 +1,18 @@
+name: image.visual
+description: |
+  User prompt for the multimodal image describer. The model must describe
+  only what is visually seen, and respond DECORATIVE for images that are
+  mostly text already captured by OCR or for purely ornamental figures.
+template: |
+  Describe the VISUAL content of this image — only what can be SEEN, not what can be READ.
+  Focus on: character portraits (appearance, pose, clothing, anatomy, colours),
+  maps, diagrams, illustrations, infographics, scenes.
+  Keep it to 2-3 sentences, concrete and factual.
+
+  Reply with EXACTLY the single word DECORATIVE (nothing else) in any of these cases:
+  - The image is primarily TEXT (stat blocks, rule tables, sidebars, page numbers,
+    credits, footers) — that text will already be extracted from the page prose,
+    so describing it again is pure noise.
+  - The image is a border, ornament, small icon, or stylised flourish.
+  - The image is abstract flavour art without identifiable subjects or meaning.
+  - The image contains the same information already present in the surrounding page text.

@@ -9,18 +9,14 @@ from core_utils.logger import logger
 
 from copper.core.wiki import WikiManager
 from copper.llm.base import LLMBase, Message
+from copper.prompts import render_prompt
 from copper.retrieval.base import RetrievalResult
 
 if TYPE_CHECKING:
     from copper.core.coppermind import CopperMind
 
 
-_SELECT_SYSTEM = """\
-You are a wiki librarian. Given a question and a wiki index, identify which pages
-contain information relevant to answering the question.
-Return ONLY a list of page slugs — one per line, prefixed with "PAGE: ".
-Do not answer the question. Do not explain your choices. Just list the slugs.
-"""
+_SELECT_SYSTEM_PROMPT = "assay.librarian"
 
 
 @dataclass
@@ -62,7 +58,7 @@ to a thorough answer — err on the side of including more rather than fewer.
 Hard limit: {self.max_pages} pages.
 """
         messages = [
-            Message(role="system", content=_SELECT_SYSTEM),
+            Message(role="system", content=render_prompt(_SELECT_SYSTEM_PROMPT)),
             Message(role="user", content=prompt),
         ]
         try:

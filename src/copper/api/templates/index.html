@@ -74,6 +74,10 @@
           <div class="card-title">🔍 <span class="cosmere">Tap</span> the coppermind</div>
           <label>Question</label>
           <textarea id="tap-question" placeholder="What do you want to know?"></textarea>
+          <label>Personality</label>
+          <select id="tap-personality" title="Voice used to answer">
+            <option value="">— default —</option>
+          </select>
           <div class="flex">
             <label style="margin:0">
               <input type="checkbox" id="tap-with-links"> Include linked minds
@@ -145,6 +149,26 @@
 
   <script>
     let currentMind = null;
+
+    // Populate the personality dropdown once at startup.
+    async function loadTapPersonalities() {
+      try {
+        const res = await fetch('/minds/prompts/tap');
+        if (!res.ok) return;
+        const items = await res.json();
+        const select = document.getElementById('tap-personality');
+        for (const it of items) {
+          const opt = document.createElement('option');
+          opt.value = it.name;
+          // e.g., "tap.archivist" → "archivist"
+          const short = it.name.startsWith('tap.') ? it.name.slice(4) : it.name;
+          opt.textContent = short + (it.description ? ` — ${it.description.split('\n')[0].slice(0, 60)}` : '');
+          opt.title = it.description || '';
+          select.appendChild(opt);
+        }
+      } catch (e) { /* silent — default is fine */ }
+    }
+    loadTapPersonalities();
 
     // ----------------------------------------------------------------
     // Mind selection
@@ -225,6 +249,7 @@
       answerEl.style.display = 'block';
       connectionsEl.innerHTML = '';
 
+      const personality = document.getElementById('tap-personality').value || null;
       const res = await fetch(`/minds/${currentMind}/tap`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -232,6 +257,7 @@
           question,
           save: document.getElementById('tap-save').checked,
           with_links: document.getElementById('tap-with-links').checked,
+          personality,
         }),
       });
       const data = await res.json();
@@ -261,11 +287,16 @@
         with_links: document.getElementById('tap-with-links').checked,
       });
 
+      const personality = document.getElementById('tap-personality').value || null;
       // POST body via fetch then read SSE stream
       fetch(`/minds/${currentMind}/tap/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, with_links: document.getElementById('tap-with-links').checked }),
+        body: JSON.stringify({
+          question,
+          with_links: document.getElementById('tap-with-links').checked,
+          personality,
+        }),
       }).then(res => {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();

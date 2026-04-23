@@ -65,7 +65,7 @@ def tap(
     mind = _get_or_404(name)
     llm = get_tap_llm(mind)
     minds = mind.expand_with_links() if body.with_links else [mind]
-    workflow = TapWorkflow(minds, llm)
+    workflow = TapWorkflow(minds, llm, personality=body.personality)
     result = workflow.run(body.question, save_to_outputs=body.save)
 
     return TapResponse(
@@ -85,13 +85,27 @@ def tap_stream(
     body: TapRequest,
 ):
     """Stream a tap response token by token via Server-Sent Events."""
+    from copper.config import settings
     from copper.llm.base import Message
+    from copper.prompts import render_prompt
     from copper.retrieval import build_default_retriever
-    from copper.workflows.tap import _build_context, _build_tap_prompt
+    from copper.workflows.tap import DEFAULT_TAP_PERSONALITY, _build_context, _build_tap_prompt
 
     mind = _get_or_404(name)
     llm = get_tap_llm(mind)
     minds = mind.expand_with_links() if body.with_links else [mind]
+
+    # Resolve personality the same way TapWorkflow does.
+    personality = (
+        body.personality
+        or getattr(mind.config, "tap_personality", "")
+        or settings.copper_tap_personality
+        or DEFAULT_TAP_PERSONALITY
+    )
+    try:
+        tap_system = render_prompt(personality)
+    except ValueError:
+        tap_system = render_prompt(DEFAULT_TAP_PERSONALITY)
 
     # Phase 1: delegate to the retrieval pipeline
     retrieval = build_default_retriever(llm).retrieve(body.question, minds)
@@ -99,7 +113,7 @@ def tap_stream(
     context = _build_context(minds, retrieval.selected)
     prompt = _build_tap_prompt(context, body.question, multi=len(minds) > 1)
     messages = [
-        Message(role="system", content=_tap_system()),
+        Message(role="system", content=tap_system),
         Message(role="user", content=prompt),
     ]
 
@@ -134,14 +148,3 @@ def polish(
         tokens_used=result.tokens_used,
         cost_usd=result.cost_usd,
     )
-
-
-# ------------------------------------------------------------------ #
-# Helpers                                                             #
-# ------------------------------------------------------------------ #
-
-
-def _tap_system() -> str:
-    from copper.workflows.tap import TAP_SYSTEM
-
-    return TAP_SYSTEM

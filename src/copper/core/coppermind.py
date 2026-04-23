@@ -31,6 +31,8 @@ class CopperMindConfig:
     tap_model: str = ""
     ingest_provider: str = ""
     ingest_model: str = ""
+    # Tap personality override — name of a prompt registered in copper.prompts.
+    tap_personality: str = ""
 
     def to_dict(self) -> dict:
         d: dict = {
@@ -53,6 +55,8 @@ class CopperMindConfig:
             d["ingest_provider"] = self.ingest_provider
         if self.ingest_model:
             d["ingest_model"] = self.ingest_model
+        if self.tap_personality:
+            d["tap_personality"] = self.tap_personality
         return d
 
     @classmethod
@@ -69,6 +73,7 @@ class CopperMindConfig:
             tap_model=data.get("tap_model", ""),
             ingest_provider=data.get("ingest_provider", ""),
             ingest_model=data.get("ingest_model", ""),
+            tap_personality=data.get("tap_personality", ""),
         )
 
 

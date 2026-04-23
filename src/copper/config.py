@@ -81,6 +81,14 @@ class Settings(CoreSettings):
     copper_tap_max_pages: int = 12
     # Tap: ceiling after keyword-augmentation fill.
     copper_tap_max_pages_total: int = 20
+    # Tap: default personality (prompt name) when none is specified per-mind
+    # or per-request. Must exist in the registered prompts.
+    copper_tap_personality: str = "tap.archivist"
+
+    # ── Prompts ─────────────────────────────────────────────────────
+    # Optional directory with user-defined YAML prompt files that override
+    # the built-ins shipped in src/copper/prompts/ when the 'name' matches.
+    copper_user_prompts_dir: str = ""
 
     # ── PDF ingestion tuning ────────────────────────────────────────
     # Heuristic filter applied before sending images to the multimodal model.

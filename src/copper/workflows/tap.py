@@ -16,41 +16,20 @@ from typing import TYPE_CHECKING
 
 from core_utils.logger import logger
 
+from copper.config import settings
 from copper.core.coppermind import CopperMind
 from copper.core.wiki import WikiManager
 from copper.llm.base import LLMBase, LLMResponse, Message
+from copper.prompts import render_prompt
 from copper.retrieval import Retriever, build_default_retriever
 
 if TYPE_CHECKING:
     pass
 
 
-TAP_SYSTEM = """\
-You are the Archivist of one or more copperminds. You answer questions based
-exclusively on the compiled wiki content. Cite the wiki pages that inform
-your answer with [Source: page-name].
-
-Give thorough, detailed answers. Synthesize information across multiple pages
-when relevant. Do not truncate or summarise unnecessarily.
-
-Numerical precision rules (read carefully, the user WILL notice mistakes):
-- When a rule says "at levels X, Y, Z", the event happens ONLY at those exact
-  levels — not at every level in between. For a question about the transition
-  "from N to M", check whether M (the level being reached) is one of the
-  listed thresholds.
-- When the wiki gives a table or list of specific values, quote them exactly;
-  do not paraphrase numbers. If a question asks about a specific row/level/case,
-  locate the corresponding row before answering.
-- If the wiki does not contain a specific number or rule the question asks for,
-  say so explicitly rather than inventing a plausible default.
-
-When consulting multiple copperminds:
-- Actively look for connections, parallels, or contradictions between them.
-- Mark found connections with [Connection: mind-a ↔ mind-b: description].
-- If the question only applies to some minds, state this clearly.
-
-If your answer reveals new insights, offer to save them to the wiki.
-"""
+# Default personality name used when nothing is set per-mind or per-request.
+# Actual text is loaded from the YAML identified by this name.
+DEFAULT_TAP_PERSONALITY = "tap.archivist"
 
 
 class TapWorkflow:
@@ -61,6 +40,7 @@ class TapWorkflow:
         minds: list[CopperMind],
         llm: LLMBase,
         retriever: Retriever | None = None,
+        personality: str | None = None,
     ):
         self.minds = minds
         self.llm = llm
@@ -68,10 +48,26 @@ class TapWorkflow:
         # configured from Settings. Callers can inject a custom retriever for tests
         # or for future BM25/embedding pipelines.
         self.retriever = retriever or build_default_retriever(llm)
+        # Personality drives which system prompt is used for the final answer.
+        # Resolution: explicit arg → per-mind config → settings → fallback.
+        self.personality = self._resolve_personality(personality)
+
+    def _resolve_personality(self, override: str | None) -> str:
+        if override:
+            return override
+        # Per-mind override: if all minds agree, use it; otherwise fall back to
+        # global settings (ambiguous which mind's personality to honour).
+        per_mind = {getattr(m.config, "tap_personality", "") for m in self.minds} - {""}
+        if len(per_mind) == 1:
+            return per_mind.pop()
+        return settings.copper_tap_personality or DEFAULT_TAP_PERSONALITY
 
     def run(self, question: str, save_to_outputs: bool = False) -> TapResult:
         mind_names = ", ".join(m.name for m in self.minds)
-        logger.info(f"[tap] Question: '{question[:80]}' | minds: [{mind_names}]")
+        logger.info(
+            f"[tap] Question: '{question[:80]}' | minds: [{mind_names}] "
+            f"| personality: {self.personality}"
+        )
 
         # Phase 1 — assay: determine which pages of each mentecobre to read.
         logger.info("[tap] Assaying the mentecobre to find relevant pages...")
@@ -91,8 +87,16 @@ class TapWorkflow:
             f"[tap] Forging answer: context {len(context):,} chars | prompt {len(prompt):,} chars"
         )
         logger.info("[tap] Sending to LLM...")
+        try:
+            tap_system = render_prompt(self.personality)
+        except ValueError:
+            logger.warning(
+                f"[tap] Personality '{self.personality}' not found, falling back to "
+                f"'{DEFAULT_TAP_PERSONALITY}'"
+            )
+            tap_system = render_prompt(DEFAULT_TAP_PERSONALITY)
         messages = [
-            Message(role="system", content=TAP_SYSTEM),
+            Message(role="system", content=tap_system),
             Message(role="user", content=prompt),
         ]
         response = self.llm.complete(messages)

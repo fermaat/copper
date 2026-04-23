@@ -17,19 +17,10 @@ from dataclasses import dataclass
 
 from core_utils.logger import logger
 
-_DESCRIBE_PROMPT = (
-    "Describe the VISUAL content of this image — only what can be SEEN, not what can be READ. "
-    "Focus on: character portraits (appearance, pose, clothing, anatomy, colours), "
-    "maps, diagrams, illustrations, infographics, scenes. "
-    "Keep it to 2-3 sentences, concrete and factual.\n\n"
-    "Reply with EXACTLY the single word DECORATIVE (nothing else) in any of these cases:\n"
-    "- The image is primarily TEXT (stat blocks, rule tables, sidebars, page numbers, "
-    "  credits, footers) — that text will already be extracted from the page prose, "
-    "  so describing it again is pure noise.\n"
-    "- The image is a border, ornament, small icon, or stylised flourish.\n"
-    "- The image is abstract flavour art without identifiable subjects or meaning.\n"
-    "- The image contains the same information already present in the surrounding page text."
-)
+from copper.prompts import render_prompt
+
+# The actual prompt text is loaded from YAML; see src/copper/prompts/image.visual.yaml.
+_DESCRIBE_PROMPT_NAME = "image.visual"
 
 
 @dataclass
@@ -58,7 +49,7 @@ class ImageDescriber:
         import httpx
 
         b64 = base64.b64encode(image_bytes).decode()
-        prompt = _DESCRIBE_PROMPT
+        prompt = render_prompt(_DESCRIBE_PROMPT_NAME)
         if context_hint:
             prompt = f"Surrounding page text:\n{context_hint[:400]}\n\n{prompt}"
 

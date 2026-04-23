@@ -1,0 +1,12 @@
+name: pdf.section
+description: |
+  User prompt for the Strategy B step of PDF chunking — asks the LLM to
+  identify top-level section titles from the opening content of a document.
+  Uses $sample for the document excerpt.
+template: |
+  The following is the beginning of a document. Identify its main chapters or sections.
+  For each section write its exact title as it appears in the document — one per line,
+  prefixed with "SECTION: ". Only list top-level sections (chapters), not subsections.
+
+  Document excerpt:
+  $sample

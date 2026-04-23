@@ -66,6 +66,48 @@ def unlink_minds(body: LinkRequest):
     mind_a.unlink(mind_b)
 
 
+@router.get("/prompts/tap", tags=["prompts"])
+def list_tap_personalities():
+    """Return available tap personalities (name + description from their YAML)."""
+    from pathlib import Path
+
+    import yaml
+
+    from copper.prompts import list_prompts
+
+    # PromptManager discards the YAML description field, so we re-read the
+    # files directly to surface it to the UI. Check built-in and user dirs.
+    descriptions: dict[str, str] = {}
+    from copper.config import settings
+
+    search_dirs = [Path(__file__).resolve().parents[2] / "prompts"]
+    if settings.copper_user_prompts_dir:
+        search_dirs.append(Path(settings.copper_user_prompts_dir).expanduser())
+
+    for directory in search_dirs:
+        if not directory.exists():
+            continue
+        for yaml_file in directory.glob("*.yaml"):
+            try:
+                with open(yaml_file) as f:
+                    data = yaml.safe_load(f) or {}
+                name = data.get("name")
+                if name and name.startswith("tap."):
+                    desc = (data.get("description") or "").strip()
+                    # First non-empty description wins per name (user dir appended
+                    # last, so user descriptions take precedence on collision).
+                    descriptions[name] = desc
+            except (OSError, yaml.YAMLError):
+                # Skip malformed files silently — the main PromptManager loader
+                # already logs these warnings at startup.
+                continue
+
+    return [
+        {"name": name, "description": descriptions.get(name, "")}
+        for name in list_prompts(prefix="tap.")
+    ]
+
+
 @router.get("/graph/all", response_model=GraphResponse, tags=["graph"])
 def get_graph():
     """Return the full coppermind link graph."""

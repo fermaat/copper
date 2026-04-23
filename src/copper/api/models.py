@@ -19,6 +19,13 @@ class TapRequest(BaseModel):
     question: str = Field(..., description="Question to answer from the wiki")
     save: bool = Field(False, description="Persist answer to outputs/")
     with_links: bool = Field(False, description="Include linked copperminds")
+    personality: str | None = Field(
+        None,
+        description=(
+            "Optional personality (prompt name) for this tap. Falls back to the "
+            "mind's configured personality, then global settings."
+        ),
+    )
 
 
 class LinkRequest(BaseModel):

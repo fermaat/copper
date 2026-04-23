@@ -18,6 +18,7 @@ from copper.core.coppermind import CopperMind
 from copper.core.wiki import WikiManager
 from copper.ingest.registry import default_registry
 from copper.llm.base import LLMBase, Message
+from copper.prompts import render_prompt
 
 if TYPE_CHECKING:
     from copper.ingest.image_describer import ImageDescriber
@@ -41,18 +42,9 @@ _PAGE_PATTERN = _re.compile(
     _re.DOTALL,
 )
 
-STORE_SYSTEM = """\
-You are the Archivist of a coppermind (mentecobre). Your mission is to maintain a
-structured markdown wiki. You read sources, extract knowledge, and weave it into the
-existing wiki. You follow the coppermind's schema strictly. You never modify files in
-raw/ — you only write to wiki/.
-
-LANGUAGE RULE (important):
-- Write the wiki content in the SAME LANGUAGE as the source material.
-- If the source is in English, the wiki pages MUST be in English.
-- If the source is in Spanish, the wiki pages MUST be in Spanish.
-- Never translate during transcription — preserve the original language and nuance.
-"""
+# Loaded lazily via render_prompt() inside the workflow so a missing YAML
+# surfaces early with a clear error, rather than at module import time.
+_STORE_SYSTEM_PROMPT = "store.archivist"
 
 
 class StoreWorkflow:
@@ -129,7 +121,7 @@ class StoreWorkflow:
 
             logger.info(f"[store] Sending to LLM ({len(prompt):,} chars in prompt)...")
             response_text, attempt_tokens, attempt_cost = _send_with_retry(
-                self.llm, STORE_SYSTEM, prompt
+                self.llm, render_prompt(_STORE_SYSTEM_PROMPT), prompt
             )
             total_tokens += attempt_tokens
             total_cost += attempt_cost
