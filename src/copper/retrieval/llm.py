@@ -42,7 +42,7 @@ class LLMRetriever:
             total_tokens += tokens
             total_cost += cost
             selected[mind.name] = slugs
-            logger.info(f"[retrieval.llm] {mind.name}: picked {len(slugs)} → {slugs}")
+            logger.info(f"[assay.llm] {mind.name}: picked {len(slugs)} → {slugs}")
 
         return RetrievalResult(selected=selected, tokens_used=total_tokens, cost_usd=total_cost)
 
@@ -68,7 +68,7 @@ Hard limit: {self.max_pages} pages.
         try:
             response = self.llm.complete(messages)
         except Exception as exc:
-            logger.warning(f"[retrieval.llm] Selection failed for '{mind_name}': {exc}")
+            logger.warning(f"[assay.llm] Selection failed for '{mind_name}': {exc}")
             return [], 0, 0.0
 
         slugs = []

@@ -14,9 +14,9 @@
     <!-- Sidebar: mind list -->
     <aside class="sidebar">
       <div class="logo">⚙ COPPER</div>
-      <div class="logo-sub">mentecobres / knowledge archive</div>
+      <div class="logo-sub"><span class="cosmere">mentecobres</span> / knowledge archive</div>
 
-      <div class="nav-section">Copperminds</div>
+      <div class="nav-section"><span class="cosmere">Copperminds</span></div>
       <div id="mind-list">
         {% for mind in minds %}
         <div class="mind-item" onclick="selectMind('{{ mind.name }}')" id="nav-{{ mind.name }}">
@@ -24,11 +24,11 @@
           <div class="mind-topic">{{ mind.config.topic }}</div>
         </div>
         {% else %}
-        <div class="text-dim">No copperminds yet.</div>
+        <div class="text-dim">No <span class="cosmere">copperminds</span> yet.</div>
         {% endfor %}
       </div>
 
-      <button class="btn-forge" onclick="openForgeModal()">⚒ Forge new mind</button>
+      <button class="btn-forge" onclick="openForgeModal()">⚒ <span class="cosmere">Forge</span> new mind</button>
     </aside>
 
     <!-- Main area -->
@@ -39,9 +39,9 @@
         <div class="card">
           <div class="card-title">⚙ Welcome to Copper</div>
           <p class="text-dim" style="line-height:1.7">
-            Forge a coppermind to start storing knowledge.<br>
+            <span class="cosmere">Forge</span> a <span class="cosmere">coppermind</span> to start storing knowledge.<br>
             Each mind is an AI-maintained wiki over a set of raw sources.<br><br>
-            <span class="text-copper">The Archivist reads. The Feruchemist asks. The copper remembers.</span>
+            <span class="text-copper">The <span class="cosmere">Archivist</span> reads. The <span class="cosmere">Feruchemist</span> asks. The copper remembers.</span>
           </p>
         </div>
       </div>
@@ -54,7 +54,7 @@
 
         <!-- Store -->
         <div class="card">
-          <div class="card-title">📥 Store a source</div>
+          <div class="card-title">📥 <span class="cosmere">Store</span> a source</div>
           <form id="store-form">
             <label>Source file (.md, .txt, .pdf)</label>
             <input type="file" id="store-file" accept=".md,.txt,.pdf,.html">
@@ -63,12 +63,15 @@
               <span class="htmx-indicator">…</span>
             </button>
           </form>
+          <p class="text-dim" style="font-size:0.7rem;margin-top:0.5rem">
+            The source is smelted into <span class="cosmere">ingots</span> and forged into the wiki.
+          </p>
           <div id="store-result" class="mt-1 text-dim"></div>
         </div>
 
         <!-- Tap -->
         <div class="card">
-          <div class="card-title">🔍 Tap the coppermind</div>
+          <div class="card-title">🔍 <span class="cosmere">Tap</span> the coppermind</div>
           <label>Question</label>
           <textarea id="tap-question" placeholder="What do you want to know?"></textarea>
           <div class="flex">
@@ -81,13 +84,16 @@
             <button class="btn btn-primary btn-sm" onclick="runTap()">Tap</button>
             <button class="btn btn-ghost btn-sm" onclick="runTapStream()">Stream</button>
           </div>
+          <p class="text-dim" style="font-size:0.7rem;margin-top:0.5rem">
+            An <span class="cosmere">assay</span> identifies the relevant pages before answering.
+          </p>
           <div id="tap-connections" class="mt-1"></div>
           <div id="tap-answer" class="answer-box mt-1" style="display:none"></div>
         </div>
 
         <!-- Polish -->
         <div class="card">
-          <div class="card-title">🪙 Polish (health check)</div>
+          <div class="card-title">🪙 <span class="cosmere">Polish</span> (health check)</div>
           <p class="text-dim" style="font-size:0.8rem;margin-bottom:0.75rem">
             Run a full wiki audit: contradictions, orphan pages, missing citations.
           </p>

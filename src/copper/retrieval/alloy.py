@@ -1,8 +1,13 @@
-"""Compose multiple retrievers. The first retriever has priority on ordering."""
+"""AlloyRetriever — composes multiple retrievers into a single pipeline.
+
+In metallurgy an alloy is a mixture of metals whose properties exceed those
+of any single component. Same idea here: each retriever contributes its
+strengths, the alloy fuses the picks into one ordered list.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from core_utils.logger import logger
@@ -14,7 +19,7 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class HybridRetriever:
+class AlloyRetriever:
     """Runs a pipeline of retrievers and merges their results.
 
     Each retriever runs in order. Slugs from earlier retrievers take priority
@@ -29,7 +34,7 @@ class HybridRetriever:
         merged: dict[str, list[str]] = {m.name: [] for m in minds}
         total_tokens = 0
         total_cost = 0.0
-        metadata: dict = field(default_factory=dict) if False else {}
+        metadata: dict = {}
 
         for idx, retriever in enumerate(self.retrievers):
             result = retriever.retrieve(question, minds)
@@ -50,7 +55,7 @@ class HybridRetriever:
                     added.append(slug)
                 if added and idx > 0:
                     logger.info(
-                        f"[retrieval.hybrid] {mind_name}: "
+                        f"[assay.alloy] {mind_name}: "
                         f"stage {idx} ({type(retriever).__name__}) added {len(added)} → {added}"
                     )
 

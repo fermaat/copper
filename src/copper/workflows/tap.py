@@ -62,11 +62,11 @@ class TapWorkflow:
         mind_names = ", ".join(m.name for m in self.minds)
         logger.info(f"[tap] Question: '{question[:80]}' | minds: [{mind_names}]")
 
-        # Phase 1: retrieval — which pages should we read?
-        logger.info("[tap] Phase 1: retrieving relevant pages...")
+        # Phase 1 — assay: determine which pages of each mentecobre to read.
+        logger.info("[tap] Assaying the mentecobre to find relevant pages...")
         retrieval = self.retriever.retrieve(question, self.minds)
         for mind_name, slugs in retrieval.selected.items():
-            logger.info(f"[tap] Phase 1 [{mind_name}]: {len(slugs)} pages → {slugs}")
+            logger.info(f"[tap] Assay result [{mind_name}]: {len(slugs)} pages → {slugs}")
 
         total_tokens = retrieval.tokens_used
         total_cost = retrieval.cost_usd
@@ -76,7 +76,9 @@ class TapWorkflow:
         multi = len(self.minds) > 1
         prompt = _build_tap_prompt(context, question, multi=multi)
 
-        logger.info(f"[tap] Phase 2: context {len(context):,} chars | prompt {len(prompt):,} chars")
+        logger.info(
+            f"[tap] Forging answer: context {len(context):,} chars | prompt {len(prompt):,} chars"
+        )
         logger.info("[tap] Sending to LLM...")
         messages = [
             Message(role="system", content=TAP_SYSTEM),

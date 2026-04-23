@@ -71,8 +71,11 @@ class StoreWorkflow:
         )
 
         char_count = sum(len(c) for c in chunks)
-        logger.info(f"[store] '{source_name}' → {char_count:,} chars in {len(chunks)} chunk(s)")
-        total_chunks = len(chunks)
+        # Source is smelted into ingots — manageable chunks that fit the forge.
+        total_ingots = len(chunks)
+        logger.info(
+            f"[store] '{source_name}' → {char_count:,} chars smelted into {total_ingots} ingot(s)"
+        )
 
         schema = self.mind.schema()
         all_pages: list[str] = []
@@ -80,13 +83,11 @@ class StoreWorkflow:
         total_cost = 0.0
 
         for i, chunk in enumerate(chunks, 1):
-            chunk_label = f"parte {i}/{total_chunks}" if total_chunks > 1 else None
-            if chunk_label:
-                logger.info(
-                    f"[store] Processing chunk {i}/{total_chunks} ({len(chunk):,} chars)..."
-                )
+            ingot_label = f"ingot {i}/{total_ingots}" if total_ingots > 1 else None
+            if ingot_label:
+                logger.info(f"[store] Forging {ingot_label} ({len(chunk):,} chars)...")
 
-            # Refresh index each iteration so the LLM sees pages created by previous chunks
+            # Refresh index each iteration so the LLM sees pages created by previous ingots
             index_content = self.wiki.read_index()
             existing_slugs = [p.name for p in self.wiki.all_pages()]
             prompt = _build_store_prompt(
@@ -94,7 +95,7 @@ class StoreWorkflow:
                 source_name,
                 chunk,
                 index_content,
-                chunk_label=chunk_label,
+                chunk_label=ingot_label,
                 existing_slugs=existing_slugs,
             )
 
@@ -110,7 +111,9 @@ class StoreWorkflow:
 
             pages = _apply_wiki_updates(response.text, source_name, self.wiki)
             all_pages.extend(pages)
-            logger.info(f"[store] Chunk {i}/{total_chunks}: {len(pages)} page(s) written → {pages}")
+            logger.info(
+                f"[store] Ingot {i}/{total_ingots} forged: {len(pages)} page(s) written → {pages}"
+            )
 
         self.mind.append_log(
             "store",
@@ -120,8 +123,8 @@ class StoreWorkflow:
             f"[store] Done: '{source_name}' → {len(all_pages)} pages, {total_tokens} tokens"
         )
 
-        # After multi-chunk ingestion, run polish to consolidate duplicates and fix gaps
-        if total_chunks > 1:
+        # After multi-ingot forging, run polish to consolidate duplicates and fix gaps
+        if total_ingots > 1:
             logger.info(f"[store] Running consolidation polish ({len(all_pages)} wiki pages)...")
             from copper.workflows.polish import PolishWorkflow
 

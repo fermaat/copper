@@ -123,7 +123,7 @@ class KeywordRetriever:
                     matches.append(page.name)
             selected[mind.name] = matches
             logger.info(
-                f"[retrieval.keyword] {mind.name}: {len(matches)} matches for {keywords} → {matches}"
+                f"[assay.keyword] {mind.name}: {len(matches)} matches for {keywords} → {matches}"
             )
 
         return RetrievalResult(selected=selected, metadata={"keywords": keywords})

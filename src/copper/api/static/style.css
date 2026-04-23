@@ -14,6 +14,13 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Cosmere-flavour terms: mentecobre, Archivist, Forge, Tap, Polish, Assay, Alloy, Ingot… */
+.cosmere {
+  color: var(--copper);
+  font-variant: small-caps;
+  letter-spacing: 0.05em;
+}
+
 body {
   font-family: "JetBrains Mono", "Fira Code", monospace;
   background: var(--bg);

@@ -24,6 +24,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
+from rich.theme import Theme
 from rich.tree import Tree
 from rich import print as rprint
 
@@ -33,13 +34,22 @@ from copper.workflows.store import StoreResult, StoreWorkflow
 from copper.workflows.tap import TapWorkflow
 from copper.workflows.polish import PolishWorkflow
 
+# Theme so cosmere-flavour tokens highlight consistently in the terminal.
+# Keep this in sync with the `.cosmere` CSS class used by the web UI.
+_COSMERE_THEME = Theme(
+    {
+        "copper": "#b87333",
+        "cosmere": "bold #b87333",
+    }
+)
+
 app = typer.Typer(
     name="copper",
     help="[bold copper]Copper[/bold copper] — Mentecobres: knowledge stored in metal.",
     rich_markup_mode="rich",
     no_args_is_help=True,
 )
-console = Console()
+console = Console(theme=_COSMERE_THEME)
 
 
 # ------------------------------------------------------------------ #
@@ -116,7 +126,9 @@ def store(
         if src.resolve() != raw_path.resolve():
             console.print(f"[dim]→ Copiando a raw/{src.name}[/dim]")
 
-        with console.status(f"[cyan]Almacenando '{src.name}' en la mentecobre...[/cyan]"):
+        with console.status(
+            f"[cyan]Almacenando '{src.name}' en la [copper]mentecobre[/copper]...[/cyan]"
+        ):
             try:
                 result = workflow.run(src)
             except FileNotFoundError as e:
@@ -169,7 +181,9 @@ def tap(
     workflow = TapWorkflow(minds, llm)
 
     mind_list = ", ".join(m.name for m in minds)
-    with console.status(f"[cyan]Extrayendo de [{mind_list}]...[/cyan]"):
+    with console.status(
+        f"[cyan][copper]Tapping[/copper] [{mind_list}] — [copper]assaying[/copper] then forging answer...[/cyan]"
+    ):
         result = workflow.run(question, save_to_outputs=save)
 
     console.print(
@@ -207,7 +221,9 @@ def polish(
     llm = get_store_llm(mind)
     workflow = PolishWorkflow(mind, llm)
 
-    with console.status("[cyan]El Archivista inspecciona la mentecobre...[/cyan]"):
+    with console.status(
+        "[cyan]El [copper]Archivista[/copper] inspecciona la [copper]mentecobre[/copper]...[/cyan]"
+    ):
         result = workflow.run()
 
     console.print(
