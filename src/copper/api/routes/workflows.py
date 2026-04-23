@@ -85,22 +85,18 @@ def tap_stream(
     body: TapRequest,
 ):
     """Stream a tap response token by token via Server-Sent Events."""
-    from copper.workflows.tap import _build_context, _build_tap_prompt, _select_pages
-    from copper.core.wiki import WikiManager
     from copper.llm.base import Message
+    from copper.retrieval import build_default_retriever
+    from copper.workflows.tap import _build_context, _build_tap_prompt
 
     mind = _get_or_404(name)
     llm = get_tap_llm(mind)
     minds = mind.expand_with_links() if body.with_links else [mind]
 
-    # Phase 1: select relevant pages from each mind's index
-    selected: dict[str, list[str]] = {}
-    for m in minds:
-        wiki = WikiManager(m.wiki_dir)
-        slugs, _, _ = _select_pages(wiki.read_index(), m.name, body.question, llm)
-        selected[m.name] = slugs
+    # Phase 1: delegate to the retrieval pipeline
+    retrieval = build_default_retriever(llm).retrieve(body.question, minds)
 
-    context = _build_context(minds, selected)
+    context = _build_context(minds, retrieval.selected)
     prompt = _build_tap_prompt(context, body.question, multi=len(minds) > 1)
     messages = [
         Message(role="system", content=_tap_system()),
