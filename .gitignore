@@ -34,8 +34,8 @@ logs/*.log
 .env
 .env.local
 
-# Claude Code (personal overrides — never commit)
-.claude/settings.local.json
+# Claude Code (personal overrides + ephemeral state — never commit)
+.claude/
 
 # IDEs
 .idea/
