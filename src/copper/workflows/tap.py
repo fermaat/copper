@@ -38,8 +38,22 @@ Return ONLY a list of page slugs — one per line, prefixed with "PAGE: ".
 Do not answer the question. Do not explain your choices. Just list the slugs.
 """
 
-# Maximum pages to retrieve in phase 2. Keeps context bounded even for broad questions.
+# Maximum pages Phase 1 LLM can pick. Keeps context bounded.
 _MAX_PAGES = 12
+
+# Hard ceiling on total pages sent to Phase 2 after keyword augmentation.
+_MAX_PAGES_TOTAL = 20
+
+# Tiny stopword list for keyword extraction — short words are already excluded by length.
+_STOPWORDS = {
+    "what", "when", "where", "which", "while", "with", "this", "that",
+    "they", "them", "their", "there", "then", "than", "have", "has",
+    "been", "does", "doing", "done", "from", "into", "some", "other",
+    "such", "more", "most", "many", "much", "each", "about", "against",
+    "between", "through", "during", "before", "after", "above", "below",
+    "here", "should", "would", "could", "must", "will", "shall",
+    "how", "why", "who", "whose", "whom",
+}
 
 
 class TapWorkflow:
@@ -65,8 +79,14 @@ class TapWorkflow:
             slugs, sel_tokens, sel_cost = _select_pages(index, mind.name, question, self.llm)
             total_tokens += sel_tokens
             total_cost += sel_cost
-            selected[mind.name] = slugs
-            logger.info(f"[tap] Phase 1 [{mind.name}]: {len(slugs)} pages selected → {slugs}")
+            logger.info(f"[tap] Phase 1 [{mind.name}]: LLM picked {len(slugs)} → {slugs}")
+
+            # Safety net: add pages whose slug/title literally matches question keywords.
+            augmented = _augment_with_keywords(wiki, question, slugs, _MAX_PAGES_TOTAL)
+            added = augmented[len(slugs):]
+            if added:
+                logger.info(f"[tap] Phase 1 [{mind.name}]: keyword augment added {len(added)} → {added}")
+            selected[mind.name] = augmented
 
         # Phase 2: build context from selected pages and answer the question
         context = _build_context(self.minds, selected)
@@ -103,6 +123,61 @@ class TapWorkflow:
             saved_to=saved_to,
             connections=connections,
         )
+
+
+def _extract_keywords(question: str) -> list[str]:
+    """Extract content-bearing keywords from a question for slug matching.
+
+    Lowercases, splits on non-word chars, drops short words and stopwords,
+    and applies a very simple plural stem so 'characters' matches 'character'.
+    """
+    import re
+
+    stems: list[str] = []
+    seen: set[str] = set()
+    for raw in re.findall(r"[a-zA-Z]{4,}", question.lower()):
+        if raw in _STOPWORDS:
+            continue
+        if raw.endswith("ies") and len(raw) > 4:
+            stem = raw[:-3] + "y"
+        elif raw.endswith("s") and not raw.endswith("ss") and len(raw) > 4:
+            stem = raw[:-1]
+        else:
+            stem = raw
+        if stem not in seen:
+            seen.add(stem)
+            stems.append(stem)
+    return stems
+
+
+def _augment_with_keywords(
+    wiki: WikiManager, question: str, selected_slugs: list[str], max_total: int
+) -> list[str]:
+    """Add pages whose slug or title contains any keyword from the question.
+
+    LLM-selected slugs keep priority; keyword matches fill remaining slots
+    up to ``max_total``. Returns the combined list.
+    """
+    keywords = _extract_keywords(question)
+    if not keywords:
+        return selected_slugs
+
+    already = {s.lower() for s in selected_slugs}
+    extra: list[str] = []
+
+    for page in wiki.all_pages():
+        if len(selected_slugs) + len(extra) >= max_total:
+            break
+        slug_lc = page.name.lower()
+        if slug_lc in already:
+            continue
+        title_lc = (page.frontmatter.get("title") or "").lower() if page.exists() else ""
+        haystack = slug_lc + " " + title_lc
+        if any(kw in haystack for kw in keywords):
+            extra.append(page.name)
+            already.add(slug_lc)
+
+    return selected_slugs + extra
 
 
 def _select_pages(
