@@ -18,6 +18,7 @@ dependencies = [
     "loguru>=0.7.3",
     "pydantic-settings>=2.13.1",
     "core-utils @ git+https://github.com/fermaat/core-utils.git",
+    "core-llm-bridge @ git+https://github.com/fermaat/core-llm-bridge.git",
 ]
 
 [project.scripts]
@@ -31,9 +32,6 @@ dev = [
     "ruff>=0.1",
     "mypy>=1.0",
     "isort>=5.12",
-]
-llm = [
-    "core-llm-bridge @ git+https://github.com/fermaat/core-llm-bridge.git",
 ]
 pdf = [
     "pdfplumber>=0.11",
