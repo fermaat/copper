@@ -125,9 +125,10 @@ def tap_stream(
     ]
 
     def event_stream():
+        import json
         for chunk in llm.stream(messages):
-            # SSE format: "data: <text>\n\n"
-            yield f"data: {chunk}\n\n"
+            if chunk:
+                yield f"data: {json.dumps(chunk)}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -199,8 +200,10 @@ def chat_stream(
     messages.append(Message(role="user", content=prompt))
 
     def event_stream():
+        import json
         for chunk in llm.stream(messages):
-            yield f"data: {chunk}\n\n"
+            if chunk:
+                yield f"data: {json.dumps(chunk)}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

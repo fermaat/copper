@@ -71,37 +71,35 @@
 
         <!-- Tap / Chat -->
         <div class="card">
-          <div class="flex" style="justify-content:space-between;margin-bottom:1rem">
-            <div class="card-title" style="margin:0">🔍 <span class="cosmere">Tap</span> the coppermind</div>
-            <div class="mode-toggle">
-              <button id="mode-tap-btn" class="mode-btn active" onclick="setMode('tap')">Tap</button>
-              <button id="mode-chat-btn" class="mode-btn" onclick="setMode('chat')">Chat</button>
-            </div>
+          <div class="card-title">🔍 <span class="cosmere">Tap</span> the coppermind</div>
+
+          <!-- Shared controls -->
+          <div class="flex" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+            <select id="shared-personality" title="Voice used to answer" style="margin:0;flex:1;min-width:140px">
+              <option value="">— personality —</option>
+            </select>
+            <label style="margin:0;white-space:nowrap">
+              <input type="checkbox" id="shared-with-links"> Include linked minds
+            </label>
+          </div>
+
+          <!-- Mode tabs -->
+          <div class="mode-toggle" style="margin-bottom:1rem">
+            <button id="mode-tap-btn" class="mode-btn active" onclick="setMode('tap')">Single question</button>
+            <button id="mode-chat-btn" class="mode-btn" onclick="setMode('chat')">Conversation</button>
           </div>
 
           <!-- Tap panel -->
           <div id="tap-panel">
-            <label>Question</label>
             <textarea id="tap-question" placeholder="What do you want to know?"></textarea>
-            <label>Personality</label>
-            <select id="tap-personality" title="Voice used to answer">
-              <option value="">— default —</option>
-            </select>
-            <div class="flex">
-              <label style="margin:0">
-                <input type="checkbox" id="tap-with-links"> Include linked minds
-              </label>
-              <label style="margin:0">
-                <input type="checkbox" id="tap-save"> Save to outputs
-              </label>
-              <button class="btn btn-primary btn-sm" onclick="runTap()">Tap</button>
-              <button class="btn btn-ghost btn-sm" onclick="runTapStream()">Stream</button>
-            </div>
-            <p class="text-dim" style="font-size:0.7rem;margin-top:0.5rem">
+            <p class="text-dim" style="font-size:0.7rem;margin-bottom:0.5rem">
               An <span class="cosmere">assay</span> identifies the relevant pages before answering.
             </p>
             <div id="tap-connections" class="mt-1"></div>
             <div id="tap-answer" class="answer-box mt-1" style="display:none"></div>
+            <div class="flex" style="justify-content:flex-end;margin-top:0.75rem">
+              <button id="tap-ask-btn" class="btn btn-primary btn-sm" onclick="runTapStream()">Ask</button>
+            </div>
           </div>
 
           <!-- Chat panel -->
@@ -109,19 +107,10 @@
             <div id="chat-thread" class="chat-thread">
               <div class="chat-empty">Ask a question to start the conversation.</div>
             </div>
-            <label>Personality</label>
-            <select id="chat-personality" title="Voice used to answer">
-              <option value="">— default —</option>
-            </select>
-            <div class="flex" style="margin-bottom:0.75rem">
-              <label style="margin:0">
-                <input type="checkbox" id="chat-with-links"> Include linked minds
-              </label>
-            </div>
             <textarea id="chat-question" placeholder="Ask a follow-up… (Ctrl+Enter to send)" style="min-height:60px"></textarea>
             <div class="flex" style="justify-content:flex-end">
               <button class="btn btn-ghost btn-sm" onclick="clearChat()">New conversation</button>
-              <button class="btn btn-primary btn-sm" onclick="sendChat()">Send</button>
+              <button id="chat-send-btn" class="btn btn-primary btn-sm" onclick="sendChat()">Send</button>
             </div>
           </div>
         </div>
@@ -187,18 +176,14 @@
         const res = await fetch('/minds/prompts/tap');
         if (!res.ok) return;
         const items = await res.json();
-        const tapSelect = document.getElementById('tap-personality');
-        const chatSelect = document.getElementById('chat-personality');
+        const select = document.getElementById('shared-personality');
         for (const it of items) {
           const short = it.name.startsWith('tap.') ? it.name.slice(4) : it.name;
-          const label = short + (it.description ? ` — ${it.description.split('\n')[0].slice(0, 60)}` : '');
-          for (const select of [tapSelect, chatSelect]) {
-            const opt = document.createElement('option');
-            opt.value = it.name;
-            opt.textContent = label;
-            opt.title = it.description || '';
-            select.appendChild(opt);
-          }
+          const opt = document.createElement('option');
+          opt.value = it.name;
+          opt.textContent = short + (it.description ? ` — ${it.description.split('\n')[0].slice(0, 60)}` : '');
+          opt.title = it.description || '';
+          select.appendChild(opt);
         }
       } catch (e) { /* silent — default is fine */ }
     }
@@ -271,39 +256,6 @@
     });
 
     // ----------------------------------------------------------------
-    // Tap (single response)
-    // ----------------------------------------------------------------
-    async function runTap() {
-      if (!currentMind) return;
-      const question = document.getElementById('tap-question').value.trim();
-      if (!question) return;
-
-      const answerEl = document.getElementById('tap-answer');
-      const connectionsEl = document.getElementById('tap-connections');
-      answerEl.textContent = 'Tapping the coppermind…';
-      answerEl.style.display = 'block';
-      connectionsEl.innerHTML = '';
-
-      const personality = document.getElementById('tap-personality').value || null;
-      const res = await fetch(`/minds/${currentMind}/tap`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question,
-          save: document.getElementById('tap-save').checked,
-          with_links: document.getElementById('tap-with-links').checked,
-          personality,
-        }),
-      });
-      const data = await res.json();
-
-      answerEl.textContent = data.answer;
-      if (data.connections.length) {
-        connectionsEl.innerHTML = data.connections.map(c => `<span class="connection-tag">${c}</span>`).join('');
-      }
-    }
-
-    // ----------------------------------------------------------------
     // Tap (streaming via SSE)
     // ----------------------------------------------------------------
     function runTapStream() {
@@ -312,24 +264,19 @@
       if (!question) return;
 
       const answerEl = document.getElementById('tap-answer');
+      const askBtn = document.getElementById('tap-ask-btn');
       answerEl.textContent = '';
       answerEl.classList.add('streaming');
       answerEl.style.display = 'block';
+      askBtn.disabled = true;
 
-      const params = new URLSearchParams({
-        question,
-        save: document.getElementById('tap-save').checked,
-        with_links: document.getElementById('tap-with-links').checked,
-      });
-
-      const personality = document.getElementById('tap-personality').value || null;
-      // POST body via fetch then read SSE stream
+      const personality = document.getElementById('shared-personality').value || null;
       fetch(`/minds/${currentMind}/tap/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question,
-          with_links: document.getElementById('tap-with-links').checked,
+          with_links: document.getElementById('shared-with-links').checked,
           personality,
         }),
       }).then(res => {
@@ -338,21 +285,19 @@
 
         function read() {
           reader.read().then(({ done, value }) => {
-            if (done) { answerEl.classList.remove('streaming'); return; }
+            if (done) { answerEl.classList.remove('streaming'); askBtn.disabled = false; return; }
             const text = decoder.decode(value);
-            // Parse SSE lines
             text.split('\n').forEach(line => {
-              if (line.startsWith('data: ')) {
-                const chunk = line.slice(6);
-                if (chunk === '[DONE]') { answerEl.classList.remove('streaming'); return; }
-                answerEl.textContent += chunk;
-              }
+              if (!line.startsWith('data: ')) return;
+              const raw = line.slice(6);
+              if (raw === '[DONE]') { answerEl.classList.remove('streaming'); askBtn.disabled = false; return; }
+              try { answerEl.textContent += JSON.parse(raw); } catch (_) {}
             });
             read();
           });
         }
         read();
-      });
+      }).catch(() => { answerEl.classList.remove('streaming'); askBtn.disabled = false; });
     }
 
     // ----------------------------------------------------------------
@@ -395,46 +340,54 @@
       const input = document.getElementById('chat-question');
       const question = input.value.trim();
       if (!question) return;
+
+      const sendBtn = document.getElementById('chat-send-btn');
+      sendBtn.disabled = true;
       input.value = '';
 
       appendChatBubble('user', question);
       const assistantBubble = appendChatBubble('assistant', '', true);
       const thread = document.getElementById('chat-thread');
 
-      const personality = document.getElementById('chat-personality').value || null;
+      const personality = document.getElementById('shared-personality').value || null;
+
+      function finalize(answer) {
+        assistantBubble.classList.remove('streaming');
+        sendBtn.disabled = false;
+        chatHistory.push({ role: 'user', content: question });
+        chatHistory.push({ role: 'assistant', content: answer });
+      }
+
       fetch(`/minds/${currentMind}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question,
           history: chatHistory,
-          with_links: document.getElementById('chat-with-links').checked,
+          with_links: document.getElementById('shared-with-links').checked,
           personality,
         }),
       }).then(res => {
+        if (!res.ok) {
+          assistantBubble.textContent = `Error ${res.status}`;
+          finalize('');
+          return;
+        }
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let answer = '';
+        let done = false;
 
         function read() {
-          reader.read().then(({ done, value }) => {
-            if (done) {
-              assistantBubble.classList.remove('streaming');
-              chatHistory.push({ role: 'user', content: question });
-              chatHistory.push({ role: 'assistant', content: answer });
-              return;
-            }
+          if (done) return;
+          reader.read().then(({ done: streamDone, value }) => {
+            if (streamDone) { finalize(answer); return; }
             const text = decoder.decode(value);
             text.split('\n').forEach(line => {
               if (!line.startsWith('data: ')) return;
-              const chunk = line.slice(6);
-              if (chunk === '[DONE]') {
-                assistantBubble.classList.remove('streaming');
-                chatHistory.push({ role: 'user', content: question });
-                chatHistory.push({ role: 'assistant', content: answer });
-                return;
-              }
-              answer += chunk;
+              const raw = line.slice(6);
+              if (raw === '[DONE]') { done = true; finalize(answer); return; }
+              try { answer += JSON.parse(raw); } catch (_) {}
               assistantBubble.textContent = answer;
               thread.scrollTop = thread.scrollHeight;
             });
@@ -442,6 +395,9 @@
           });
         }
         read();
+      }).catch(err => {
+        assistantBubble.textContent = `Connection error: ${err.message}`;
+        finalize('');
       });
     }
 

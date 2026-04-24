@@ -166,9 +166,9 @@ label { font-size: 0.7rem; color: var(--text-dim); display: block; margin-bottom
   display: block; color: var(--text-dim); font-size: 0.7rem;
 }
 
-/* Mode toggle (Tap / Chat) */
-.mode-toggle { display: flex; gap: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 2px; }
-.mode-btn { background: transparent; border: none; color: var(--text-dim); font-family: inherit; font-size: 0.7rem; padding: 0.2rem 0.75rem; border-radius: 3px; cursor: pointer; transition: all 0.15s; }
+/* Mode tabs (Single question / Conversation) */
+.mode-toggle { display: flex; gap: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 2px; width: 100%; }
+.mode-btn { flex: 1; background: transparent; border: none; color: var(--text-dim); font-family: inherit; font-size: 0.75rem; padding: 0.35rem 0.5rem; border-radius: 3px; cursor: pointer; transition: all 0.15s; }
 .mode-btn.active { background: var(--copper-dark); color: var(--text); }
 
 /* Chat thread */
