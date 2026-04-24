@@ -69,30 +69,61 @@
           <div id="store-result" class="mt-1 text-dim"></div>
         </div>
 
-        <!-- Tap -->
+        <!-- Tap / Chat -->
         <div class="card">
-          <div class="card-title">🔍 <span class="cosmere">Tap</span> the coppermind</div>
-          <label>Question</label>
-          <textarea id="tap-question" placeholder="What do you want to know?"></textarea>
-          <label>Personality</label>
-          <select id="tap-personality" title="Voice used to answer">
-            <option value="">— default —</option>
-          </select>
-          <div class="flex">
-            <label style="margin:0">
-              <input type="checkbox" id="tap-with-links"> Include linked minds
-            </label>
-            <label style="margin:0">
-              <input type="checkbox" id="tap-save"> Save to outputs
-            </label>
-            <button class="btn btn-primary btn-sm" onclick="runTap()">Tap</button>
-            <button class="btn btn-ghost btn-sm" onclick="runTapStream()">Stream</button>
+          <div class="flex" style="justify-content:space-between;margin-bottom:1rem">
+            <div class="card-title" style="margin:0">🔍 <span class="cosmere">Tap</span> the coppermind</div>
+            <div class="mode-toggle">
+              <button id="mode-tap-btn" class="mode-btn active" onclick="setMode('tap')">Tap</button>
+              <button id="mode-chat-btn" class="mode-btn" onclick="setMode('chat')">Chat</button>
+            </div>
           </div>
-          <p class="text-dim" style="font-size:0.7rem;margin-top:0.5rem">
-            An <span class="cosmere">assay</span> identifies the relevant pages before answering.
-          </p>
-          <div id="tap-connections" class="mt-1"></div>
-          <div id="tap-answer" class="answer-box mt-1" style="display:none"></div>
+
+          <!-- Tap panel -->
+          <div id="tap-panel">
+            <label>Question</label>
+            <textarea id="tap-question" placeholder="What do you want to know?"></textarea>
+            <label>Personality</label>
+            <select id="tap-personality" title="Voice used to answer">
+              <option value="">— default —</option>
+            </select>
+            <div class="flex">
+              <label style="margin:0">
+                <input type="checkbox" id="tap-with-links"> Include linked minds
+              </label>
+              <label style="margin:0">
+                <input type="checkbox" id="tap-save"> Save to outputs
+              </label>
+              <button class="btn btn-primary btn-sm" onclick="runTap()">Tap</button>
+              <button class="btn btn-ghost btn-sm" onclick="runTapStream()">Stream</button>
+            </div>
+            <p class="text-dim" style="font-size:0.7rem;margin-top:0.5rem">
+              An <span class="cosmere">assay</span> identifies the relevant pages before answering.
+            </p>
+            <div id="tap-connections" class="mt-1"></div>
+            <div id="tap-answer" class="answer-box mt-1" style="display:none"></div>
+          </div>
+
+          <!-- Chat panel -->
+          <div id="chat-panel" class="hidden">
+            <div id="chat-thread" class="chat-thread">
+              <div class="chat-empty">Ask a question to start the conversation.</div>
+            </div>
+            <label>Personality</label>
+            <select id="chat-personality" title="Voice used to answer">
+              <option value="">— default —</option>
+            </select>
+            <div class="flex" style="margin-bottom:0.75rem">
+              <label style="margin:0">
+                <input type="checkbox" id="chat-with-links"> Include linked minds
+              </label>
+            </div>
+            <textarea id="chat-question" placeholder="Ask a follow-up… (Ctrl+Enter to send)" style="min-height:60px"></textarea>
+            <div class="flex" style="justify-content:flex-end">
+              <button class="btn btn-ghost btn-sm" onclick="clearChat()">New conversation</button>
+              <button class="btn btn-primary btn-sm" onclick="sendChat()">Send</button>
+            </div>
+          </div>
         </div>
 
         <!-- Polish -->
@@ -156,15 +187,18 @@
         const res = await fetch('/minds/prompts/tap');
         if (!res.ok) return;
         const items = await res.json();
-        const select = document.getElementById('tap-personality');
+        const tapSelect = document.getElementById('tap-personality');
+        const chatSelect = document.getElementById('chat-personality');
         for (const it of items) {
-          const opt = document.createElement('option');
-          opt.value = it.name;
-          // e.g., "tap.archivist" → "archivist"
           const short = it.name.startsWith('tap.') ? it.name.slice(4) : it.name;
-          opt.textContent = short + (it.description ? ` — ${it.description.split('\n')[0].slice(0, 60)}` : '');
-          opt.title = it.description || '';
-          select.appendChild(opt);
+          const label = short + (it.description ? ` — ${it.description.split('\n')[0].slice(0, 60)}` : '');
+          for (const select of [tapSelect, chatSelect]) {
+            const opt = document.createElement('option');
+            opt.value = it.name;
+            opt.textContent = label;
+            opt.title = it.description || '';
+            select.appendChild(opt);
+          }
         }
       } catch (e) { /* silent — default is fine */ }
     }
@@ -208,6 +242,7 @@
       document.getElementById('tap-answer').style.display = 'none';
       document.getElementById('polish-result').style.display = 'none';
       document.getElementById('store-result').textContent = '';
+      clearChat();
     }
 
     // ----------------------------------------------------------------
@@ -319,6 +354,100 @@
         read();
       });
     }
+
+    // ----------------------------------------------------------------
+    // Mode toggle (Tap / Chat)
+    // ----------------------------------------------------------------
+    function setMode(mode) {
+      const isTap = mode === 'tap';
+      document.getElementById('tap-panel').classList.toggle('hidden', !isTap);
+      document.getElementById('chat-panel').classList.toggle('hidden', isTap);
+      document.getElementById('mode-tap-btn').classList.toggle('active', isTap);
+      document.getElementById('mode-chat-btn').classList.toggle('active', !isTap);
+    }
+
+    // ----------------------------------------------------------------
+    // Chat (multi-turn tap)
+    // ----------------------------------------------------------------
+    let chatHistory = [];
+
+    function appendChatBubble(role, content, streaming = false) {
+      const thread = document.getElementById('chat-thread');
+      const empty = thread.querySelector('.chat-empty');
+      if (empty) empty.remove();
+      const bubble = document.createElement('div');
+      bubble.className = `chat-bubble ${role}${streaming ? ' streaming' : ''}`;
+      bubble.textContent = content;
+      thread.appendChild(bubble);
+      thread.scrollTop = thread.scrollHeight;
+      return bubble;
+    }
+
+    function clearChat() {
+      chatHistory = [];
+      const thread = document.getElementById('chat-thread');
+      thread.innerHTML = '<div class="chat-empty">Ask a question to start the conversation.</div>';
+      document.getElementById('chat-question').value = '';
+    }
+
+    function sendChat() {
+      if (!currentMind) return;
+      const input = document.getElementById('chat-question');
+      const question = input.value.trim();
+      if (!question) return;
+      input.value = '';
+
+      appendChatBubble('user', question);
+      const assistantBubble = appendChatBubble('assistant', '', true);
+      const thread = document.getElementById('chat-thread');
+
+      const personality = document.getElementById('chat-personality').value || null;
+      fetch(`/minds/${currentMind}/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question,
+          history: chatHistory,
+          with_links: document.getElementById('chat-with-links').checked,
+          personality,
+        }),
+      }).then(res => {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let answer = '';
+
+        function read() {
+          reader.read().then(({ done, value }) => {
+            if (done) {
+              assistantBubble.classList.remove('streaming');
+              chatHistory.push({ role: 'user', content: question });
+              chatHistory.push({ role: 'assistant', content: answer });
+              return;
+            }
+            const text = decoder.decode(value);
+            text.split('\n').forEach(line => {
+              if (!line.startsWith('data: ')) return;
+              const chunk = line.slice(6);
+              if (chunk === '[DONE]') {
+                assistantBubble.classList.remove('streaming');
+                chatHistory.push({ role: 'user', content: question });
+                chatHistory.push({ role: 'assistant', content: answer });
+                return;
+              }
+              answer += chunk;
+              assistantBubble.textContent = answer;
+              thread.scrollTop = thread.scrollHeight;
+            });
+            read();
+          });
+        }
+        read();
+      });
+    }
+
+    document.getElementById('chat-question').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendChat(); }
+    });
 
     // ----------------------------------------------------------------
     // Polish

@@ -62,14 +62,22 @@ class TapWorkflow:
             return per_mind.pop()
         return settings.copper_tap_personality or DEFAULT_TAP_PERSONALITY
 
-    def run(self, question: str, save_to_outputs: bool = False) -> TapResult:
+    def run(
+        self,
+        question: str,
+        history: list[Message] | None = None,
+        save_to_outputs: bool = False,
+    ) -> TapResult:
         mind_names = ", ".join(m.name for m in self.minds)
         logger.info(
             f"[tap] Question: '{question[:80]}' | minds: [{mind_names}] "
             f"| personality: {self.personality}"
+            + (f" | history: {len(history)} turns" if history else "")
         )
 
         # Phase 1 — assay: determine which pages of each mentecobre to read.
+        # Always retrieves against the latest question — history doesn't change
+        # which pages are relevant for the current turn.
         logger.info("[tap] Assaying the mentecobre to find relevant pages...")
         retrieval = self.retriever.retrieve(question, self.minds)
         for mind_name, slugs in retrieval.selected.items():
@@ -78,7 +86,9 @@ class TapWorkflow:
         total_tokens = retrieval.tokens_used
         total_cost = retrieval.cost_usd
 
-        # Phase 2: build context from selected pages and answer the question
+        # Phase 2: build context from selected pages and answer the question.
+        # Wiki context is injected into the current user message only — prior
+        # turns in history carry just raw Q&A to keep token usage lean.
         context = _build_context(self.minds, retrieval.selected)
         multi = len(self.minds) > 1
         prompt = _build_tap_prompt(context, question, multi=multi)
@@ -95,10 +105,10 @@ class TapWorkflow:
                 f"'{DEFAULT_TAP_PERSONALITY}'"
             )
             tap_system = render_prompt(DEFAULT_TAP_PERSONALITY)
-        messages = [
-            Message(role="system", content=tap_system),
-            Message(role="user", content=prompt),
-        ]
+        messages = [Message(role="system", content=tap_system)]
+        if history:
+            messages.extend(history)
+        messages.append(Message(role="user", content=prompt))
         response = self.llm.complete(messages)
         total_tokens += response.tokens_used
         total_cost += response.cost_usd

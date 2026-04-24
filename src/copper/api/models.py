@@ -28,6 +28,21 @@ class TapRequest(BaseModel):
     )
 
 
+class ChatMessage(BaseModel):
+    role: str = Field(..., description="'user' or 'assistant'")
+    content: str = Field(..., description="Message content")
+
+
+class ChatRequest(BaseModel):
+    question: str = Field(..., description="Current user question")
+    history: list[ChatMessage] = Field(
+        default_factory=list,
+        description="Prior turns as alternating user/assistant messages (without wiki context)",
+    )
+    with_links: bool = Field(False, description="Include linked copperminds")
+    personality: str | None = Field(None, description="Personality override")
+
+
 class LinkRequest(BaseModel):
     name_a: str
     name_b: str
@@ -65,6 +80,15 @@ class TapResponse(BaseModel):
     connections: list[str]
     tokens_used: int
     saved_to: list[str]
+    cost_usd: float = 0.0
+
+
+class ChatResponse(BaseModel):
+    question: str
+    answer: str
+    minds_used: list[str]
+    connections: list[str]
+    tokens_used: int
     cost_usd: float = 0.0
 
 

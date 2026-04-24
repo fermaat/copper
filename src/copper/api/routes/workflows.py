@@ -8,7 +8,14 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 
 from copper.api.deps import get_ingest_describer, get_store_llm, get_tap_llm
-from copper.api.models import PolishResponse, StoreResponse, TapRequest, TapResponse
+from copper.api.models import (
+    ChatRequest,
+    ChatResponse,
+    PolishResponse,
+    StoreResponse,
+    TapRequest,
+    TapResponse,
+)
 from copper.api.routes.minds import _get_or_404
 from copper.core.coppermind import CopperMind
 from copper.workflows.polish import PolishWorkflow
@@ -120,6 +127,79 @@ def tap_stream(
     def event_stream():
         for chunk in llm.stream(messages):
             # SSE format: "data: <text>\n\n"
+            yield f"data: {chunk}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+# ------------------------------------------------------------------ #
+# Chat (multi-turn tap)                                              #
+# ------------------------------------------------------------------ #
+
+
+@router.post("/{name}/chat", response_model=ChatResponse)
+def chat(
+    name: str,
+    body: ChatRequest,
+):
+    """Multi-turn tap: history is stateless on the server, sent by the client."""
+    from copper.llm.base import Message
+
+    mind = _get_or_404(name)
+    llm = get_tap_llm(mind)
+    minds = mind.expand_with_links() if body.with_links else [mind]
+    history = [Message(role=m.role, content=m.content) for m in body.history]
+    workflow = TapWorkflow(minds, llm, personality=body.personality)
+    result = workflow.run(body.question, history=history or None)
+
+    return ChatResponse(
+        question=result.question,
+        answer=result.answer,
+        minds_used=result.minds_used,
+        connections=result.connections,
+        tokens_used=result.tokens_used,
+        cost_usd=result.cost_usd,
+    )
+
+
+@router.post("/{name}/chat/stream")
+def chat_stream(
+    name: str,
+    body: ChatRequest,
+):
+    """Stream a multi-turn chat response via Server-Sent Events."""
+    from copper.config import settings
+    from copper.llm.base import Message
+    from copper.prompts import render_prompt
+    from copper.retrieval import build_default_retriever
+    from copper.workflows.tap import DEFAULT_TAP_PERSONALITY, _build_context, _build_tap_prompt
+
+    mind = _get_or_404(name)
+    llm = get_tap_llm(mind)
+    minds = mind.expand_with_links() if body.with_links else [mind]
+
+    personality = (
+        body.personality
+        or getattr(mind.config, "tap_personality", "")
+        or settings.copper_tap_personality
+        or DEFAULT_TAP_PERSONALITY
+    )
+    try:
+        tap_system = render_prompt(personality)
+    except ValueError:
+        tap_system = render_prompt(DEFAULT_TAP_PERSONALITY)
+
+    retrieval = build_default_retriever(llm).retrieve(body.question, minds)
+    context = _build_context(minds, retrieval.selected)
+    prompt = _build_tap_prompt(context, body.question, multi=len(minds) > 1)
+
+    messages = [Message(role="system", content=tap_system)]
+    messages.extend(Message(role=m.role, content=m.content) for m in body.history)
+    messages.append(Message(role="user", content=prompt))
+
+    def event_stream():
+        for chunk in llm.stream(messages):
             yield f"data: {chunk}\n\n"
         yield "data: [DONE]\n\n"
 

@@ -153,8 +153,10 @@ The server starts at `http://127.0.0.1:8000` by default.
 | `GET` | `/minds/{name}` | Get stats |
 | `DELETE` | `/minds/{name}` | Delete |
 | `POST` | `/minds/{name}/store` | Ingest a file (multipart upload) |
-| `POST` | `/minds/{name}/tap` | Ask a question |
+| `POST` | `/minds/{name}/tap` | Ask a single question |
 | `POST` | `/minds/{name}/tap/stream` | Ask with SSE streaming |
+| `POST` | `/minds/{name}/chat` | Multi-turn chat (history in request body) |
+| `POST` | `/minds/{name}/chat/stream` | Multi-turn chat with SSE streaming |
 | `POST` | `/minds/{name}/polish` | Run a wiki audit |
 | `GET` | `/minds/{name}/wiki` | List wiki pages |
 | `GET` | `/minds/{name}/wiki/{slug}` | Get a page |

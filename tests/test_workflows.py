@@ -167,6 +167,42 @@ class TestTapWorkflow:
         log_content = mind.log_path.read_text()
         assert "tap" in log_content
 
+    def test_tap_with_history_passes_prior_turns(self, mind):
+        from copper.llm.base import Message
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        llm = MockLLM(["Respuesta de seguimiento."])
+        history = [
+            Message(role="user", content="¿Qué son los transformers?"),
+            Message(role="assistant", content="Son arquitecturas de atención."),
+        ]
+        workflow = TapWorkflow([mind], llm)
+        result = workflow.run("¿Cuándo se introdujeron?", history=history)
+
+        assert result.answer == "Respuesta de seguimiento."
+        # The LLM must receive system + 2 history turns + current user = 4 messages
+        last_call = llm.calls[-1]
+        assert len(last_call) == 4
+        assert last_call[1].role == "user"
+        assert last_call[1].content == history[0].content
+        assert last_call[2].role == "assistant"
+        assert last_call[3].role == "user"
+
+    def test_tap_without_history_unchanged(self, mind):
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        llm = MockLLM(["Respuesta normal."])
+        workflow = TapWorkflow([mind], llm)
+        result = workflow.run("¿Pregunta simple?")
+
+        # system + user only (no history)
+        last_call = llm.calls[-1]
+        assert len(last_call) == 2
+        assert last_call[0].role == "system"
+        assert last_call[1].role == "user"
+
 
 # ------------------------------------------------------------------ #
 # Polish                                                              #

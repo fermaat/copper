@@ -22,7 +22,7 @@ src/copper/
 │   └── bridge_adapter.py # Wraps core-llm-bridge BridgeEngine → LLMBase
 ├── workflows/
 │   ├── store.py         # StoreWorkflow: source → chunks → LLM → XML wiki updates → auto-polish
-│   ├── tap.py           # TapWorkflow: question + full wiki context → LLM → TapResult
+│   ├── tap.py           # TapWorkflow: question (+ optional history) + wiki context → LLM → TapResult
 │   └── polish.py        # PolishWorkflow: structural checks + LLM audit → lint report
 ├── api/
 │   ├── app.py           # FastAPI application factory
@@ -58,7 +58,7 @@ src/copper/
 
 **Workflows**
 - `StoreWorkflow(mind, llm).run(path)` → `registry.to_chunks()` → per-chunk LLM call (refreshes index between chunks) → `<wiki_updates>` XML → wiki pages → auto-polish if multi-chunk → `StoreResult`
-- `TapWorkflow(minds, llm).run(question)` → loads full wiki into context → LLM → extracts `[Conexión: A ↔ B]` markers → `TapResult`
+- `TapWorkflow(minds, llm).run(question, history=None)` → retrieves relevant pages → builds context → appends optional prior turns → LLM → `TapResult`. `history` is a list of `Message(role, content)` for multi-turn chat.
 - `PolishWorkflow(mind, llm).run()` → structural checks (orphans, stubs, missing backlinks) + LLM audit → `wiki/lint-report-<date>.md`
 
 **Settings** (`config.py`)
@@ -117,6 +117,7 @@ copper serve [--host] [--port] [--reload]
 - Phase 2 ✓ — multi-mind linking, cross-mind tap, `--with-links`
 - Phase 3 ✓ — FastAPI REST API + HTMX UI + Docker + SSE streaming
 - Phase 4 ✓ — PDF/Obsidian/PlainText ingest plugins, watchdog auto-ingest, smart PDF chunking
+- Phase 5 ✓ — multi-turn chat mode (stateless history, `/chat` + `/chat/stream` API, toggle UI)
 
 ## Known technical debt
 

@@ -166,6 +166,19 @@ label { font-size: 0.7rem; color: var(--text-dim); display: block; margin-bottom
   display: block; color: var(--text-dim); font-size: 0.7rem;
 }
 
+/* Mode toggle (Tap / Chat) */
+.mode-toggle { display: flex; gap: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 2px; }
+.mode-btn { background: transparent; border: none; color: var(--text-dim); font-family: inherit; font-size: 0.7rem; padding: 0.2rem 0.75rem; border-radius: 3px; cursor: pointer; transition: all 0.15s; }
+.mode-btn.active { background: var(--copper-dark); color: var(--text); }
+
+/* Chat thread */
+.chat-thread { max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding: 0.5rem 0; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+.chat-bubble { max-width: 88%; padding: 0.6rem 0.85rem; border-radius: 6px; font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap; }
+.chat-bubble.user { align-self: flex-end; background: rgba(184,115,51,0.15); border: 1px solid var(--copper-dark); color: var(--text); }
+.chat-bubble.assistant { align-self: flex-start; background: var(--bg); border: 1px solid var(--border); color: var(--text); }
+.chat-bubble.assistant.streaming { border-color: var(--copper-dark); }
+.chat-empty { color: var(--text-dim); font-size: 0.75rem; text-align: center; padding: 1.5rem 0; align-self: center; }
+
 /* HTMX indicator */
 .htmx-indicator { display: none; color: var(--copper); font-size: 0.75rem; }
 .htmx-request .htmx-indicator { display: inline; }
