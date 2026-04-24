@@ -60,6 +60,31 @@ def test_slug_normalisation(wiki_dir):
     assert page.path.name == "mi-tema-con-espacios.md"
 
 
+def test_source_to_slug_strips_extension():
+    from copper.core.wiki import source_to_slug
+
+    # Core invariant: citation with extension == path stem (no extension)
+    assert source_to_slug("Mistborn.pdf") == source_to_slug("Mistborn")
+    assert source_to_slug("Era Two.epub") == source_to_slug("Era Two")
+    assert source_to_slug("notes.txt") == source_to_slug("notes")
+
+
+def test_source_to_slug_handles_all_known_extensions():
+    from copper.core.wiki import source_to_slug
+
+    base = "my-source"
+    for ext in (".pdf", ".txt", ".md", ".epub", ".docx", ".html"):
+        assert source_to_slug(f"{base}{ext}") == base, f"failed for {ext}"
+        assert source_to_slug(f"{base}{ext.upper()}") == base, f"failed for {ext.upper()}"
+
+
+def test_source_to_slug_preserves_slugging():
+    from copper.core.wiki import source_to_slug
+
+    assert source_to_slug("The Final Empire.pdf") == "the-final-empire"
+    assert source_to_slug("book_name") == "book-name"
+
+
 def test_all_pages_excludes_index_and_log(wiki_dir):
     from copper.core.wiki import WikiManager
 

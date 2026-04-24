@@ -125,9 +125,9 @@ class PDFPlugin(IngestPlugin):
             )
         import time
 
-        from copper.core.wiki import _to_slug
+        from copper.core.wiki import source_to_slug
 
-        source_slug = _to_slug(path.stem)
+        source_slug = source_to_slug(path.stem)
         if image_save_dir is not None:
             image_save_dir.mkdir(parents=True, exist_ok=True)
 

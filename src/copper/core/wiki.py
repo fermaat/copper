@@ -148,3 +148,21 @@ def _to_slug(text: str) -> str:
     text = re.sub(r"[^\w\s-]", "", text)
     text = re.sub(r"[\s_]+", "-", text)
     return text
+
+
+_SOURCE_EXTENSIONS = {".pdf", ".txt", ".md", ".epub", ".docx", ".html"}
+
+
+def source_to_slug(text: str) -> str:
+    """Like _to_slug but strips known file extensions first.
+
+    Ensures [Source: Mistborn.pdf] and path stem "Mistborn" resolve to the
+    same slug so saved image filenames match the markers in wiki bodies.
+    """
+    stem = re.sub(
+        r"\.(" + "|".join(e.lstrip(".") for e in _SOURCE_EXTENSIONS) + r")$",
+        "",
+        text.strip(),
+        flags=re.IGNORECASE,
+    )
+    return _to_slug(stem)

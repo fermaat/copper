@@ -405,7 +405,7 @@
       if (!sourceMatch) {
         return markdown;  // no source cited → can't locate the image file
       }
-      const sourceSlug = toSlug(sourceMatch[1].trim());
+      const sourceSlug = sourceToSlug(sourceMatch[1].trim());
 
       const visualRegex = /\[Visual on page (\d+), image (\d+):\s*([^\]]+?)\]/g;
       return markdown.replace(visualRegex, (_match, page, img, desc) => {
@@ -421,14 +421,21 @@
       });
     }
 
-    // Mirrors the slug used by _to_slug on the backend (lowercase, drop
-    // non-word chars, spaces/underscores → dashes).
+    // Mirrors _to_slug on the backend (lowercase, drop non-word chars,
+    // spaces/underscores → dashes).
     function toSlug(text) {
       return text
         .toLowerCase()
         .trim()
         .replace(/[^\w\s-]/g, '')
         .replace(/[\s_]+/g, '-');
+    }
+
+    // Mirrors source_to_slug on the backend — strips known file extensions
+    // before slugifying so [Source: Mistborn.pdf] resolves to the same slug
+    // as the saved image filename derived from path.stem ("Mistborn").
+    function sourceToSlug(text) {
+      return toSlug(text.replace(/\.(pdf|txt|md|epub|docx|html)$/i, ''));
     }
 
     function enterEditMode() {
