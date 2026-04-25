@@ -75,11 +75,15 @@ class TapWorkflow:
             + (f" | history: {len(history)} turns" if history else "")
         )
 
-        # Phase 1 — assay: determine which pages of each mentecobre to read.
-        # Always retrieves against the latest question — history doesn't change
-        # which pages are relevant for the current turn.
+        # Phase 1 — assay: determine which pages to read.
+        # When history is present, prepend recent turns so the retriever can
+        # resolve pronouns and co-references in the current question.
+        retrieval_question = question
+        if history:
+            recent = " ".join(m.content for m in history[-4:])
+            retrieval_question = f"{recent} {question}"
         logger.info("[tap] Assaying the mentecobre to find relevant pages...")
-        retrieval = self.retriever.retrieve(question, self.minds)
+        retrieval = self.retriever.retrieve(retrieval_question, self.minds)
         for mind_name, slugs in retrieval.selected.items():
             logger.info(f"[tap] Assay result [{mind_name}]: {len(slugs)} pages → {slugs}")
 
@@ -96,7 +100,6 @@ class TapWorkflow:
         logger.info(
             f"[tap] Forging answer: context {len(context):,} chars | prompt {len(prompt):,} chars"
         )
-        logger.info("[tap] Sending to LLM...")
         try:
             tap_system = render_prompt(self.personality)
         except ValueError:
@@ -109,6 +112,10 @@ class TapWorkflow:
         if history:
             messages.extend(history)
         messages.append(Message(role="user", content=prompt))
+        logger.info(f"[tap] Sending to LLM ({len(messages)} messages):")
+        for i, msg in enumerate(messages):
+            preview = msg.content[:120].replace("\n", "↵")
+            logger.info(f"[tap]   [{i}] {msg.role}: {preview!r} ({len(msg.content)} chars)")
         response = self.llm.complete(messages)
         total_tokens += response.tokens_used
         total_cost += response.cost_usd

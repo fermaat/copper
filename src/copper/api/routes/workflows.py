@@ -192,13 +192,26 @@ def chat_stream(
     except ValueError:
         tap_system = render_prompt(DEFAULT_TAP_PERSONALITY)
 
-    retrieval = build_default_retriever(llm).retrieve(body.question, minds)
+    # Enrich retrieval query with recent history so pronouns/co-references resolve.
+    retrieval_question = body.question
+    if body.history:
+        recent = " ".join(m.content for m in body.history[-4:])
+        retrieval_question = f"{recent} {body.question}"
+
+    retrieval = build_default_retriever(llm).retrieve(retrieval_question, minds)
     context = _build_context(minds, retrieval.selected)
     prompt = _build_tap_prompt(context, body.question, multi=len(minds) > 1)
 
     messages = [Message(role="system", content=tap_system)]
     messages.extend(Message(role=m.role, content=m.content) for m in body.history)
     messages.append(Message(role="user", content=prompt))
+
+    from core_utils.logger import logger
+
+    logger.info(f"[chat/stream] Sending to LLM ({len(messages)} messages):")
+    for i, msg in enumerate(messages):
+        preview = msg.content[:120].replace("\n", "↵")
+        logger.info(f"[chat/stream]   [{i}] {msg.role}: {preview!r} ({len(msg.content)} chars)")
 
     def event_stream():
         import json
