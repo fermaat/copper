@@ -116,6 +116,10 @@ class PDFPlugin(IngestPlugin):
         image_describer: Any = None,
         image_save_dir: Path | None = None,
     ) -> list[tuple[int, str]]:
+        import sys
+
+        logger.info(f"[pdf] _extract_pages: start — '{path.name}'")
+        sys.stderr.flush()
         try:
             import pdfplumber
         except ImportError:
@@ -123,6 +127,8 @@ class PDFPlugin(IngestPlugin):
                 "pdfplumber is required to ingest PDF files.\n"
                 "Install it with: pdm install -G pdf"
             )
+        logger.info("[pdf] _extract_pages: pdfplumber imported")
+        sys.stderr.flush()
         import time
 
         from copper.core.wiki import source_to_slug
@@ -133,6 +139,8 @@ class PDFPlugin(IngestPlugin):
 
         result: list[tuple[int, str]] = []
         total_images_described = 0
+        logger.info(f"[pdf] _extract_pages: calling pdfplumber.open('{path.name}')")
+        sys.stderr.flush()
         with pdfplumber.open(path) as pdf:
             total = len(pdf.pages)
             logger.info(
@@ -142,7 +150,8 @@ class PDFPlugin(IngestPlugin):
             )
             for i, page in enumerate(pdf.pages, 1):
                 page_start = time.monotonic()
-                logger.debug(f"[pdf] Page {i}/{total}: starting")
+                logger.info(f"[pdf] Page {i}/{total}: starting extract_text")
+                sys.stderr.flush()
                 # layout=True preserves horizontal positioning so multi-column
                 # pages (prose + stat blocks, etc.) don't get interleaved.
                 text = (page.extract_text(layout=True) or "").strip()
@@ -242,7 +251,7 @@ class PDFPlugin(IngestPlugin):
         try:
             kept_bboxes: list[tuple] = []
             deduped: list[dict] = []
-            for img in sorted(images, key=_area, reverse=True):
+            for img in images:
                 try:
                     bbox = (
                         float(img.get("x0") or 0),
@@ -296,6 +305,10 @@ class PDFPlugin(IngestPlugin):
                     stats["filtered"] += 1
                     continue  # degenerate after clamping
                 crop = page.within_bbox(bbox)
+                logger.info(
+                    f"[pdf] Rendering image {idx} on page {page.page_number}: "
+                    f"bbox={bbox} size={width:.0f}×{height:.0f}pts"
+                )
                 pil_img = crop.to_image(resolution=150).original
                 buf = io.BytesIO()
                 pil_img.save(buf, format="PNG")

@@ -21,9 +21,12 @@ COPY pyproject.toml pdm.lock* ./
 RUN pdm install --no-self --no-editable
 
 # PDM venvs don't ship with pip — bootstrap it, then install optional extras
+# cryptography>=42 ships Rust binaries that use ARM NEON instructions unavailable
+# in this Docker/ARM64 environment, causing SIGILL on pdfminer import.
 RUN /app/.venv/bin/python -m ensurepip --upgrade && \
     /app/.venv/bin/python -m pip install --no-cache-dir \
     "core-llm-bridge @ git+https://github.com/fermaat/core-llm-bridge.git" \
+    "cryptography<42" \
     pdfplumber
 
 # ------------------------------------------------------------------ #
