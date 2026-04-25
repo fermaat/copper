@@ -211,7 +211,62 @@ class PDFPlugin(IngestPlugin):
         import hashlib
         import io
 
-        deduped = images
+        # --- Dedup pass 1: bbox containment ---
+        # Sort by area descending so the largest version is kept and any smaller
+        # crop/zoom of the same illustration (a common PDF pattern) gets dropped.
+        def _area(img: dict) -> float:
+            try:
+                return float(img.get("width") or 0) * float(img.get("height") or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        def _containment(img: dict, kept_bbox: tuple) -> float:
+            try:
+                ax0 = float(img.get("x0") or 0)
+                ay0 = float(img.get("top") or 0)
+                ax1 = float(img.get("x1") or 0)
+                ay1 = float(img.get("bottom") or 0)
+            except (TypeError, ValueError):
+                return 0.0
+            ix0 = max(ax0, kept_bbox[0])
+            iy0 = max(ay0, kept_bbox[1])
+            ix1 = min(ax1, kept_bbox[2])
+            iy1 = min(ay1, kept_bbox[3])
+            if ix1 <= ix0 or iy1 <= iy0:
+                return 0.0
+            inter = (ix1 - ix0) * (iy1 - iy0)
+            area_a = (ax1 - ax0) * (ay1 - ay0)
+            return inter / area_a if area_a > 0 else 0.0
+
+        try:
+            kept_bboxes: list[tuple] = []
+            deduped: list[dict] = []
+            for img in sorted(images, key=_area, reverse=True):
+                try:
+                    bbox = (
+                        float(img.get("x0") or 0),
+                        float(img.get("top") or 0),
+                        float(img.get("x1") or 0),
+                        float(img.get("bottom") or 0),
+                    )
+                except (TypeError, ValueError):
+                    deduped.append(img)
+                    continue
+                if any(_containment(img, kb) > 0.6 for kb in kept_bboxes):
+                    stats["filtered"] += 1
+                    continue
+                kept_bboxes.append(bbox)
+                deduped.append(img)
+            if stats["raw"] - len(deduped):
+                logger.debug(
+                    f"[pdf] Page {page.page_number}: bbox dedup removed "
+                    f"{stats['raw'] - len(deduped)}/{stats['raw']} images"
+                )
+        except Exception:
+            logger.opt(exception=True).warning(
+                f"[pdf] Page {page.page_number}: bbox dedup failed, processing all"
+            )
+            deduped = list(images)
 
         descriptions: list[str] = []
         seen_hashes: set[str] = set()

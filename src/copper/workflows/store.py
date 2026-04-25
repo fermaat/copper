@@ -119,7 +119,12 @@ class StoreWorkflow:
                 existing_slugs=existing_slugs,
             )
 
-            logger.info(f"[store] Sending to LLM ({len(prompt):,} chars in prompt)...")
+            visual_count = chunk.count("[Visual on page")
+            logger.info(
+                f"[store] Sending to LLM ({len(prompt):,} chars in prompt"
+                + (f", {visual_count} visual markers" if visual_count else "")
+                + ")..."
+            )
             response_text, attempt_tokens, attempt_cost = _send_with_retry(
                 self.llm, render_prompt(_STORE_SYSTEM_PROMPT), prompt
             )
@@ -128,6 +133,7 @@ class StoreWorkflow:
 
             pages = _apply_wiki_updates(response_text, source_name, self.wiki)
             all_pages.extend(pages)
+            _inject_missing_visual_markers(chunk, pages, self.wiki)
             logger.info(
                 f"[store] Ingot {i}/{total_ingots} forged: {len(pages)} page(s) written → {pages}"
             )
@@ -159,6 +165,42 @@ class StoreWorkflow:
             tokens_used=total_tokens,
             cost_usd=total_cost,
         )
+
+
+def _extract_visual_markers(text: str) -> list[str]:
+    import re
+    return re.findall(r"\[Visual on page \d+, image \d+:[^\]]+\]", text)
+
+
+def _inject_missing_visual_markers(
+    chunk: str, page_slugs: list[str], wiki: WikiManager
+) -> None:
+    """Append visual markers from chunk that the LLM omitted from wiki pages.
+
+    Guarantees every described image ends up in at least one wiki page,
+    regardless of whether the store LLM preserved the markers verbatim.
+    Targets the first page written for the chunk (typically the primary one).
+    """
+    markers = _extract_visual_markers(chunk)
+    if not markers or not page_slugs:
+        return
+
+    target_slug = page_slugs[0]
+    page = wiki.page(target_slug)
+    if not page.exists():
+        return
+
+    body = page.body
+    missing = [m for m in markers if m not in body]
+    if not missing:
+        return
+
+    logger.info(
+        f"[store] Injecting {len(missing)} visual marker(s) into '{target_slug}' "
+        f"(LLM did not preserve them)"
+    )
+    new_body = body.rstrip() + "\n\n" + "\n\n".join(missing) + "\n"
+    wiki.update_page(target_slug, new_body)
 
 
 def _build_store_prompt(
