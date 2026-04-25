@@ -116,10 +116,6 @@ class PDFPlugin(IngestPlugin):
         image_describer: Any = None,
         image_save_dir: Path | None = None,
     ) -> list[tuple[int, str]]:
-        import sys
-
-        logger.info(f"[pdf] _extract_pages: start — '{path.name}'")
-        sys.stderr.flush()
         try:
             import pdfplumber
         except ImportError:
@@ -127,8 +123,6 @@ class PDFPlugin(IngestPlugin):
                 "pdfplumber is required to ingest PDF files.\n"
                 "Install it with: pdm install -G pdf"
             )
-        logger.info("[pdf] _extract_pages: pdfplumber imported")
-        sys.stderr.flush()
         import time
 
         from copper.core.wiki import source_to_slug
@@ -139,8 +133,6 @@ class PDFPlugin(IngestPlugin):
 
         result: list[tuple[int, str]] = []
         total_images_described = 0
-        logger.info(f"[pdf] _extract_pages: calling pdfplumber.open('{path.name}')")
-        sys.stderr.flush()
         with pdfplumber.open(path) as pdf:
             total = len(pdf.pages)
             logger.info(
@@ -150,8 +142,7 @@ class PDFPlugin(IngestPlugin):
             )
             for i, page in enumerate(pdf.pages, 1):
                 page_start = time.monotonic()
-                logger.info(f"[pdf] Page {i}/{total}: starting extract_text")
-                sys.stderr.flush()
+                logger.debug(f"[pdf] Page {i}/{total}: starting")
                 # layout=True preserves horizontal positioning so multi-column
                 # pages (prose + stat blocks, etc.) don't get interleaved.
                 text = (page.extract_text(layout=True) or "").strip()
@@ -220,63 +211,7 @@ class PDFPlugin(IngestPlugin):
         import hashlib
         import io
 
-        # --- Dedup pass 1: bbox containment ---
-        # Sort largest-area first, then skip any image whose bbox is ≥60%
-        # contained within a larger already-kept image.  This removes the
-        # common PDF pattern of the same image placed at multiple zoom levels.
-        # Wrapped in try/except — unexpected image dict formats must not crash
-        # the worker.
-        def _area(img: dict) -> float:
-            try:
-                return float(img.get("width") or 0) * float(img.get("height") or 0)
-            except (TypeError, ValueError):
-                return 0.0
-
-        def _containment(img: dict, kept_bbox: tuple) -> float:
-            try:
-                ax0, ay0 = float(img.get("x0") or 0), float(img.get("top") or 0)
-                ax1, ay1 = float(img.get("x1") or 0), float(img.get("bottom") or 0)
-            except (TypeError, ValueError):
-                return 0.0
-            ix0 = max(ax0, kept_bbox[0])
-            iy0 = max(ay0, kept_bbox[1])
-            ix1 = min(ax1, kept_bbox[2])
-            iy1 = min(ay1, kept_bbox[3])
-            if ix1 <= ix0 or iy1 <= iy0:
-                return 0.0
-            inter = (ix1 - ix0) * (iy1 - iy0)
-            area_a = (ax1 - ax0) * (ay1 - ay0)
-            return inter / area_a if area_a > 0 else 0.0
-
-        try:
-            kept_bboxes: list[tuple] = []
-            deduped: list[dict] = []
-            for img in images:
-                try:
-                    bbox = (
-                        float(img.get("x0") or 0),
-                        float(img.get("top") or 0),
-                        float(img.get("x1") or 0),
-                        float(img.get("bottom") or 0),
-                    )
-                except (TypeError, ValueError):
-                    deduped.append(img)
-                    continue
-                if any(_containment(img, kb) > 0.6 for kb in kept_bboxes):
-                    stats["filtered"] += 1
-                    continue
-                kept_bboxes.append(bbox)
-                deduped.append(img)
-            bbox_removed = stats["raw"] - len(deduped)
-            if bbox_removed:
-                logger.debug(
-                    f"[pdf] Page {page.page_number}: bbox dedup removed {bbox_removed}/{stats['raw']} images"
-                )
-        except Exception as exc:
-            logger.opt(exception=True).warning(
-                f"[pdf] Page {page.page_number}: image dedup failed, processing all ({exc})"
-            )
-            deduped = list(images)
+        deduped = images
 
         descriptions: list[str] = []
         seen_hashes: set[str] = set()
@@ -305,7 +240,7 @@ class PDFPlugin(IngestPlugin):
                     stats["filtered"] += 1
                     continue  # degenerate after clamping
                 crop = page.within_bbox(bbox)
-                logger.info(
+                logger.debug(
                     f"[pdf] Rendering image {idx} on page {page.page_number}: "
                     f"bbox={bbox} size={width:.0f}×{height:.0f}pts"
                 )
