@@ -142,12 +142,18 @@ class PDFPlugin(IngestPlugin):
             )
             for i, page in enumerate(pdf.pages, 1):
                 page_start = time.monotonic()
+                logger.debug(f"[pdf] Page {i}/{total}: starting")
                 # layout=True preserves horizontal positioning so multi-column
                 # pages (prose + stat blocks, etc.) don't get interleaved.
                 text = (page.extract_text(layout=True) or "").strip()
                 tables_md = self._extract_tables_as_markdown(page)
                 images_md = ""
                 if image_describer is not None:
+                    raw_img_count = len(getattr(page, "images", None) or [])
+                    if raw_img_count:
+                        logger.info(
+                            f"[pdf] Page {i}/{total}: {raw_img_count} images found, describing..."
+                        )
                     images_md, img_stats = self._extract_images_as_markdown(
                         page, text, image_describer, source_slug, image_save_dir
                     )
@@ -170,8 +176,8 @@ class PDFPlugin(IngestPlugin):
                 if combined:
                     result.append((i, combined))
 
-                # Periodic summary every 50 pages (and at the end)
-                if i % 50 == 0 or i == total:
+                # Periodic summary every 10 pages (and at the end)
+                if i % 10 == 0 or i == total:
                     extra = (
                         f", {total_images_described} images described" if image_describer else ""
                     )
@@ -209,12 +215,20 @@ class PDFPlugin(IngestPlugin):
         # Sort largest-area first, then skip any image whose bbox is ≥60%
         # contained within a larger already-kept image.  This removes the
         # common PDF pattern of the same image placed at multiple zoom levels.
+        # Wrapped in try/except — unexpected image dict formats must not crash
+        # the worker.
         def _area(img: dict) -> float:
-            return float(img.get("width") or 0) * float(img.get("height") or 0)
+            try:
+                return float(img.get("width") or 0) * float(img.get("height") or 0)
+            except (TypeError, ValueError):
+                return 0.0
 
         def _containment(img: dict, kept_bbox: tuple) -> float:
-            ax0, ay0 = float(img.get("x0", 0)), float(img.get("top", 0))
-            ax1, ay1 = float(img.get("x1", 0)), float(img.get("bottom", 0))
+            try:
+                ax0, ay0 = float(img.get("x0") or 0), float(img.get("top") or 0)
+                ax1, ay1 = float(img.get("x1") or 0), float(img.get("bottom") or 0)
+            except (TypeError, ValueError):
+                return 0.0
             ix0 = max(ax0, kept_bbox[0])
             iy0 = max(ay0, kept_bbox[1])
             ix1 = min(ax1, kept_bbox[2])
@@ -225,20 +239,35 @@ class PDFPlugin(IngestPlugin):
             area_a = (ax1 - ax0) * (ay1 - ay0)
             return inter / area_a if area_a > 0 else 0.0
 
-        kept_bboxes: list[tuple] = []
-        deduped: list[dict] = []
-        for img in sorted(images, key=_area, reverse=True):
-            bbox = (
-                float(img.get("x0", 0)),
-                float(img.get("top", 0)),
-                float(img.get("x1", 0)),
-                float(img.get("bottom", 0)),
+        try:
+            kept_bboxes: list[tuple] = []
+            deduped: list[dict] = []
+            for img in sorted(images, key=_area, reverse=True):
+                try:
+                    bbox = (
+                        float(img.get("x0") or 0),
+                        float(img.get("top") or 0),
+                        float(img.get("x1") or 0),
+                        float(img.get("bottom") or 0),
+                    )
+                except (TypeError, ValueError):
+                    deduped.append(img)
+                    continue
+                if any(_containment(img, kb) > 0.6 for kb in kept_bboxes):
+                    stats["filtered"] += 1
+                    continue
+                kept_bboxes.append(bbox)
+                deduped.append(img)
+            bbox_removed = stats["raw"] - len(deduped)
+            if bbox_removed:
+                logger.debug(
+                    f"[pdf] Page {page.page_number}: bbox dedup removed {bbox_removed}/{stats['raw']} images"
+                )
+        except Exception as exc:
+            logger.opt(exception=True).warning(
+                f"[pdf] Page {page.page_number}: image dedup failed, processing all ({exc})"
             )
-            if any(_containment(img, kb) > 0.6 for kb in kept_bboxes):
-                stats["filtered"] += 1
-                continue
-            kept_bboxes.append(bbox)
-            deduped.append(img)
+            deduped = list(images)
 
         descriptions: list[str] = []
         seen_hashes: set[str] = set()
@@ -271,10 +300,26 @@ class PDFPlugin(IngestPlugin):
                 buf = io.BytesIO()
                 pil_img.save(buf, format="PNG")
                 image_bytes = buf.getvalue()
-            except Exception as exc:
-                logger.warning(f"[pdf] Could not crop image on page {page.page_number}: {exc}")
+            except MemoryError:
+                logger.opt(exception=True).error(
+                    f"[pdf] OOM rendering image {idx} on page {page.page_number} "
+                    f"(size {width:.0f}×{height:.0f} pts) — skipping"
+                )
                 stats["failed"] += 1
                 continue
+            except Exception:
+                logger.opt(exception=True).warning(
+                    f"[pdf] Could not render image {idx} on page {page.page_number} "
+                    f"(size {width:.0f}×{height:.0f} pts)"
+                )
+                stats["failed"] += 1
+                continue
+            finally:
+                # Release PIL object immediately — large renders hold significant RAM.
+                try:
+                    del pil_img  # type: ignore[name-defined]
+                except NameError:
+                    pass
 
             # --- Dedup pass 2: pixel hash ---
             # Catches identical renders that survived the bbox pass (e.g. same

@@ -7,6 +7,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 
+from core_utils.logger import logger
+
 from copper.api.deps import get_ingest_describer, get_store_llm, get_tap_llm
 from copper.api.models import (
     ChatRequest,
@@ -48,8 +50,19 @@ async def store(
     content = await file.read()
     raw_path.write_bytes(content)
 
-    result = workflow.run(raw_path)
+    logger.info(
+        f"[store/route] Starting ingestion: '{original_name}' ({len(content):,} bytes) → mind '{name}'"
+    )
+    try:
+        result = workflow.run(raw_path)
+    except Exception:
+        logger.exception(f"[store/route] Ingestion of '{original_name}' failed")
+        raise
 
+    logger.info(
+        f"[store/route] Done: '{original_name}' → {len(result.pages_written)} pages, "
+        f"{result.tokens_used} tokens, ${result.cost_usd:.4f}"
+    )
     return StoreResponse(
         source=result.source,
         pages_written=result.pages_written,
