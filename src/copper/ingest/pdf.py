@@ -202,11 +202,48 @@ class PDFPlugin(IngestPlugin):
         if not images:
             return "", stats
 
+        import hashlib
         import io
 
-        descriptions: list[str] = []
+        # --- Dedup pass 1: bbox containment ---
+        # Sort largest-area first, then skip any image whose bbox is ≥60%
+        # contained within a larger already-kept image.  This removes the
+        # common PDF pattern of the same image placed at multiple zoom levels.
+        def _area(img: dict) -> float:
+            return float(img.get("width") or 0) * float(img.get("height") or 0)
 
-        for idx, img in enumerate(images):
+        def _containment(img: dict, kept_bbox: tuple) -> float:
+            ax0, ay0 = float(img.get("x0", 0)), float(img.get("top", 0))
+            ax1, ay1 = float(img.get("x1", 0)), float(img.get("bottom", 0))
+            ix0 = max(ax0, kept_bbox[0])
+            iy0 = max(ay0, kept_bbox[1])
+            ix1 = min(ax1, kept_bbox[2])
+            iy1 = min(ay1, kept_bbox[3])
+            if ix1 <= ix0 or iy1 <= iy0:
+                return 0.0
+            inter = (ix1 - ix0) * (iy1 - iy0)
+            area_a = (ax1 - ax0) * (ay1 - ay0)
+            return inter / area_a if area_a > 0 else 0.0
+
+        kept_bboxes: list[tuple] = []
+        deduped: list[dict] = []
+        for img in sorted(images, key=_area, reverse=True):
+            bbox = (
+                float(img.get("x0", 0)),
+                float(img.get("top", 0)),
+                float(img.get("x1", 0)),
+                float(img.get("bottom", 0)),
+            )
+            if any(_containment(img, kb) > 0.6 for kb in kept_bboxes):
+                stats["filtered"] += 1
+                continue
+            kept_bboxes.append(bbox)
+            deduped.append(img)
+
+        descriptions: list[str] = []
+        seen_hashes: set[str] = set()
+
+        for idx, img in enumerate(deduped):
             width = float(img.get("width") or 0)
             height = float(img.get("height") or 0)
             if width < _MIN_IMAGE_WIDTH or height < _MIN_IMAGE_HEIGHT:
@@ -238,6 +275,15 @@ class PDFPlugin(IngestPlugin):
                 logger.warning(f"[pdf] Could not crop image on page {page.page_number}: {exc}")
                 stats["failed"] += 1
                 continue
+
+            # --- Dedup pass 2: pixel hash ---
+            # Catches identical renders that survived the bbox pass (e.g. same
+            # image placed at the same size at two different positions).
+            img_hash = hashlib.md5(image_bytes).hexdigest()
+            if img_hash in seen_hashes:
+                stats["filtered"] += 1
+                continue
+            seen_hashes.add(img_hash)
 
             desc = describer.describe(image_bytes, context_hint=context_text)
             if desc is None:

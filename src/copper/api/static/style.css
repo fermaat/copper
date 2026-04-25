@@ -183,6 +183,17 @@ label { font-size: 0.7rem; color: var(--text-dim); display: block; margin-bottom
 .htmx-indicator { display: none; color: var(--copper); font-size: 0.75rem; }
 .htmx-request .htmx-indicator { display: inline; }
 
+/* Thinking placeholder shown before first stream chunk */
+.thinking {
+  color: var(--text-dim);
+  font-style: italic;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
 /* Utility */
 .flex { display: flex; gap: 0.75rem; align-items: center; }
 .text-dim { color: var(--text-dim); font-size: 0.75rem; }

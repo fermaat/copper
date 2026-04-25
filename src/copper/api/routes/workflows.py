@@ -126,6 +126,7 @@ def tap_stream(
 
     def event_stream():
         import json
+
         for chunk in llm.stream(messages):
             if chunk:
                 yield f"data: {json.dumps(chunk)}\n\n"
@@ -201,6 +202,7 @@ def chat_stream(
 
     def event_stream():
         import json
+
         for chunk in llm.stream(messages):
             if chunk:
                 yield f"data: {json.dumps(chunk)}\n\n"

@@ -265,8 +265,8 @@
 
       const answerEl = document.getElementById('tap-answer');
       const askBtn = document.getElementById('tap-ask-btn');
-      answerEl.textContent = '';
-      answerEl.classList.add('streaming');
+      answerEl.textContent = 'Assaying the coppermind…';
+      answerEl.classList.add('streaming', 'thinking');
       answerEl.style.display = 'block';
       askBtn.disabled = true;
 
@@ -282,22 +282,26 @@
       }).then(res => {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
+        let firstChunk = true;
 
         function read() {
           reader.read().then(({ done, value }) => {
-            if (done) { answerEl.classList.remove('streaming'); askBtn.disabled = false; return; }
+            if (done) { answerEl.classList.remove('streaming', 'thinking'); askBtn.disabled = false; return; }
             const text = decoder.decode(value);
             text.split('\n').forEach(line => {
               if (!line.startsWith('data: ')) return;
               const raw = line.slice(6);
-              if (raw === '[DONE]') { answerEl.classList.remove('streaming'); askBtn.disabled = false; return; }
-              try { answerEl.textContent += JSON.parse(raw); } catch (_) {}
+              if (raw === '[DONE]') { answerEl.classList.remove('streaming', 'thinking'); askBtn.disabled = false; return; }
+              try {
+                if (firstChunk) { answerEl.textContent = ''; answerEl.classList.remove('thinking'); firstChunk = false; }
+                answerEl.textContent += JSON.parse(raw);
+              } catch (_) {}
             });
             read();
           });
         }
         read();
-      }).catch(() => { answerEl.classList.remove('streaming'); askBtn.disabled = false; });
+      }).catch(() => { answerEl.classList.remove('streaming', 'thinking'); askBtn.disabled = false; });
     }
 
     // ----------------------------------------------------------------
@@ -346,13 +350,14 @@
       input.value = '';
 
       appendChatBubble('user', question);
-      const assistantBubble = appendChatBubble('assistant', '', true);
+      const assistantBubble = appendChatBubble('assistant', 'Assaying the coppermind…', true);
+      assistantBubble.classList.add('thinking');
       const thread = document.getElementById('chat-thread');
 
       const personality = document.getElementById('shared-personality').value || null;
 
       function finalize(answer) {
-        assistantBubble.classList.remove('streaming');
+        assistantBubble.classList.remove('streaming', 'thinking');
         sendBtn.disabled = false;
         chatHistory.push({ role: 'user', content: question });
         chatHistory.push({ role: 'assistant', content: answer });
@@ -369,6 +374,7 @@
         }),
       }).then(res => {
         if (!res.ok) {
+          assistantBubble.classList.remove('thinking');
           assistantBubble.textContent = `Error ${res.status}`;
           finalize('');
           return;
@@ -377,6 +383,7 @@
         const decoder = new TextDecoder();
         let answer = '';
         let done = false;
+        let firstChunk = true;
 
         function read() {
           if (done) return;
@@ -387,7 +394,10 @@
               if (!line.startsWith('data: ')) return;
               const raw = line.slice(6);
               if (raw === '[DONE]') { done = true; finalize(answer); return; }
-              try { answer += JSON.parse(raw); } catch (_) {}
+              try {
+                if (firstChunk) { assistantBubble.textContent = ''; assistantBubble.classList.remove('thinking'); firstChunk = false; }
+                answer += JSON.parse(raw);
+              } catch (_) {}
               assistantBubble.textContent = answer;
               thread.scrollTop = thread.scrollHeight;
             });
@@ -396,6 +406,7 @@
         }
         read();
       }).catch(err => {
+        assistantBubble.classList.remove('thinking');
         assistantBubble.textContent = `Connection error: ${err.message}`;
         finalize('');
       });
