@@ -51,7 +51,7 @@ class ImageDescriber:
         b64 = base64.b64encode(image_bytes).decode()
         prompt = render_prompt(_DESCRIBE_PROMPT_NAME)
         if context_hint:
-            prompt = f"Surrounding page text:\n{context_hint[:400]}\n\n{prompt}"
+            prompt = f"Surrounding page text:\n{context_hint[:800]}\n\n{prompt}"
 
         try:
             resp = httpx.post(

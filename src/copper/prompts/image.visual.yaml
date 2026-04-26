@@ -13,6 +13,6 @@ template: |
   - The image is primarily TEXT (stat blocks, rule tables, sidebars, page numbers,
     credits, footers) — that text will already be extracted from the page prose,
     so describing it again is pure noise.
-  - The image is a border, ornament, small icon, or stylised flourish.
-  - The image is abstract flavour art without identifiable subjects or meaning.
-  - The image contains the same information already present in the surrounding page text.
+  - The image is a border, ornament, small icon, or stylised flourish with no
+    identifiable subject (character, place, object, scene, or diagram).
+  - The image is purely abstract with no recognisable visual content.

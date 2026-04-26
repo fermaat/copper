@@ -175,31 +175,32 @@ def _extract_visual_markers(text: str) -> list[str]:
 def _inject_missing_visual_markers(
     chunk: str, page_slugs: list[str], wiki: WikiManager
 ) -> None:
-    """Append visual markers from chunk that the LLM omitted from wiki pages.
+    """Safety net: append markers the LLM dropped into the first written page.
 
-    Guarantees every described image ends up in at least one wiki page,
-    regardless of whether the store LLM preserved the markers verbatim.
-    Targets the first page written for the chunk (typically the primary one).
+    Only fires when a marker isn't found in any page of the ingot, so it never
+    duplicates markers the LLM placed correctly.
     """
     markers = _extract_visual_markers(chunk)
     if not markers or not page_slugs:
         return
 
-    target_slug = page_slugs[0]
-    page = wiki.page(target_slug)
-    if not page.exists():
+    wiki_pages = [(slug, wiki.page(slug)) for slug in page_slugs]
+    wiki_pages = [(slug, p) for slug, p in wiki_pages if p.exists()]
+    if not wiki_pages:
         return
 
-    body = page.body
-    missing = [m for m in markers if m not in body]
+    target_slug, target_page = wiki_pages[0]
+    missing = [
+        m for m in markers
+        if not any(m in p.body for _, p in wiki_pages)
+    ]
     if not missing:
         return
 
     logger.info(
-        f"[store] Injecting {len(missing)} visual marker(s) into '{target_slug}' "
-        f"(LLM did not preserve them)"
+        f"[store] Safety net: injecting {len(missing)} marker(s) into '{target_slug}'"
     )
-    new_body = body.rstrip() + "\n\n" + "\n\n".join(missing) + "\n"
+    new_body = target_page.body.rstrip() + "\n\n" + "\n\n".join(missing) + "\n"
     wiki.update_page(target_slug, new_body)
 
 
@@ -228,14 +229,28 @@ def _build_store_prompt(
             "Do not touch pages unrelated to this fragment.\n"
         )
 
+    visual_markers = _extract_visual_markers(source_text)
+    images_section = ""
+    if visual_markers:
+        markers_str = "\n".join(f"  {m}" for m in visual_markers)
+        images_section = f"""
+## Images in this fragment
+The following are descriptions of figures extracted from this document fragment.
+For each one, if the described content fits a wiki page you are writing, embed the
+full marker verbatim (copy it exactly as shown — the UI uses it to render the image).
+Only include a marker in pages where the image genuinely complements the content.
+
+{markers_str}
+
+"""
+
     return f"""\
 ## Coppermind schema
 {schema}
 
 ## Current wiki index
 {index}
-{update_note}
-## New source to store: {source_name}{chunk_note}
+{update_note}{images_section}## New source to store: {source_name}{chunk_note}
 {source_text}
 
 ---
@@ -261,11 +276,6 @@ Important rules:
 - Add [[backlinks]] where appropriate.
 - Cite sources as [Source: {source_name}].
 - Mark contradictions when present.
-- PRESERVE `[Visual on page N, image M: ...]` markers verbatim when they add
-  useful visual information (colours, anatomy, scenes, diagrams). They are
-  descriptions of figures from the original document and carry knowledge
-  absent from the prose. The UI uses the page/image index to render the
-  actual figure alongside the description — do NOT rephrase or strip them.
 - LANGUAGE: write the wiki content in the SAME LANGUAGE as the source text
   above. Do not translate.
 """
