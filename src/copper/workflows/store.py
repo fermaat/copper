@@ -221,13 +221,31 @@ def _marker_description_words(marker: str) -> list[str]:
     return [w for w in re.findall(r"\w+", body) if len(w) > 4 and w not in _MARKER_STOPWORDS]
 
 
-def _pick_best_slug(marker: str, bodies: dict[str, str]) -> str:
+# Confidence floor for orphan-marker injection. Below this, the safety net
+# drops the marker rather than risk placing it on an unrelated page. 50 is
+# the score for "slug name appears verbatim inside the marker" — anything
+# weaker is too noisy to act on.
+_MIN_PLACEMENT_CONFIDENCE = 50
+
+
+def _pick_best_slug(
+    marker: str,
+    bodies: dict[str, str],
+    min_confidence: int = _MIN_PLACEMENT_CONFIDENCE,
+) -> str | None:
     """Pick the wiki slug most semantically related to a visual marker.
+
+    Returns ``None`` when no slug clears ``min_confidence`` — placing a marker
+    on an unrelated page is worse than dropping it, since a wrong image is
+    actively misleading while a missing one only fails to render.
 
     Scoring (higher is better):
     - +100 if any marker keyword appears in the slug name itself.
     - +20 per marker keyword found in the page body.
-    - +50 if the slug-as-words appears verbatim inside the marker.
+    - +50 if the slug-as-words appears inside the marker after punctuation
+      normalisation (so 'regal-relayform' matches 'Regal: Relayform').
+    - +30 if every slug token appears somewhere in the marker (handles word
+      reordering, e.g. slug 'regal-relayform' vs marker 'Relayform, Regal').
     - +2 per distinctive description word found in the page body.
 
     Ties resolve to the first slug in iteration order.
@@ -235,18 +253,24 @@ def _pick_best_slug(marker: str, bodies: dict[str, str]) -> str:
     kws = _marker_keywords(marker)
     desc_words = _marker_description_words(marker)
     marker_low = marker.lower()
+    # Normalise punctuation so 'Regal: Relayform' matches slug 'regal-relayform'.
+    marker_normalised = re.sub(r"\s+", " ", re.sub(r"[^\w\s]+", " ", marker_low)).strip()
+    marker_token_set = set(marker_normalised.split())
 
-    best_slug = next(iter(bodies))
-    best_score = -1
+    best_slug: str | None = None
+    best_score = min_confidence - 1
     for slug, body in bodies.items():
         body_low = body.lower()
-        slug_words = slug.replace("-", " ").lower()
+        slug_tokens = slug.replace("-", " ").lower().split()
+        slug_words = " ".join(slug_tokens)
         score = 0
         if any(k in slug_words for k in kws):
             score += 100
         score += sum(20 for k in kws if k in body_low)
-        if slug_words and slug_words in marker_low:
+        if slug_words and slug_words in marker_normalised:
             score += 50
+        if slug_tokens and all(t in marker_token_set for t in slug_tokens):
+            score += 30
         score += sum(2 for w in desc_words if w in body_low)
         if score > best_score:
             best_score = score
@@ -304,7 +328,10 @@ def _inject_missing_visual_markers(
             bodies[slug] = bodies[slug].rstrip() + "\n\n" + "\n\n".join(lost) + "\n"
             dirty.add(slug)
 
-    # 2. Inject orphan markers from the current chunk.
+    # 2. Inject orphan markers from the current chunk — but only when the
+    #    semantic match is confident. Below the threshold we drop the marker;
+    #    a missing image is preferable to an image attached to the wrong
+    #    subject. Polish can flag the gap later.
     chunk_markers = _extract_visual_markers(chunk)
     if chunk_markers:
         present_ids = {
@@ -315,6 +342,14 @@ def _inject_missing_visual_markers(
             if m_id in present_ids:
                 continue
             best_slug = _pick_best_slug(marker, bodies)
+            if best_slug is None:
+                logger.warning(
+                    f"[store] Dropping orphan marker {m_id}: no current-iteration "
+                    "page scored above the placement-confidence floor. The image "
+                    "may belong to a page from another ingot — re-run polish to "
+                    "surface the gap."
+                )
+                continue
             logger.info(f"[store] Injecting orphan marker {m_id} into '{best_slug}'")
             bodies[best_slug] = bodies[best_slug].rstrip() + "\n\n" + marker + "\n"
             dirty.add(best_slug)
@@ -360,12 +395,22 @@ def _build_store_prompt(
     if visual_markers:
         markers_str = "\n".join(f"  {m}" for m in visual_markers)
         images_section = f"""
-## Images in this fragment
-The following image markers were extracted from this document fragment.
-You MUST embed every marker in exactly one of the pages you write — the page whose
-content is most closely related to the image. Copy each marker verbatim; the UI
-uses it to render the image alongside the text. Do not omit any marker.
+## Images in this fragment ({len(visual_markers)} marker(s))
+Each marker below describes one image and MUST appear, copied verbatim, in
+exactly one page — the page whose subject the marker describes.
 
+Rules (mandatory):
+- Copy each marker EXACTLY as it appears below: keep the brackets, the page
+  number, the image number, and the description text byte-for-byte. Do not
+  paraphrase or translate.
+- A marker describing "Subject X" goes on the page about Subject X. Never on
+  a neighbouring page about Subject Y.
+- Use every marker exactly once. Do not duplicate one across pages.
+- If you cannot identify which page a marker belongs to, place it on the page
+  that most directly names the same subject — never spread it across multiple
+  pages as a hedge.
+
+Markers (verbatim):
 {markers_str}
 
 """

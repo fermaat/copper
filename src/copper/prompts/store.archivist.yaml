@@ -21,3 +21,18 @@ template: |
   - Keep all existing sections, stats, and descriptions intact.
   - Append new information at the end or add new subsections.
   - Never remove or overwrite existing content when updating.
+
+  VISUAL MARKERS rule (critical):
+  - Image markers have the exact shape `[Visual on page N, image M: <description>]`
+    and appear inline within the source text. The UI uses them to render the image
+    next to the wiki text — they are NOT decorative, they are functional.
+  - Copy each marker VERBATIM. Never rewrite, paraphrase, translate, summarise, or
+    split the bracketed text. The exact characters between `[` and `]` must survive.
+  - Place each marker on the SINGLE page whose subject matches the description.
+    If the description says "Reveler of Ashertmarn", the marker goes on the
+    `reveler-of-ashertmarn` page — never on a sibling character's page.
+  - Do not duplicate a marker across pages. Each marker belongs to exactly one page.
+  - Do not invent markers. Only use markers that appear in the source fragment.
+  - If a fragment contains five markers for five different subjects, the five
+    pages you write must each carry their own marker — not the same one repeated,
+    not all five clumped onto one page.
