@@ -98,10 +98,16 @@ label { font-size: 0.7rem; color: var(--text-dim); display: block; margin-bottom
 
 /* Connections */
 .connection-tag {
-  display: inline-block; background: rgba(184,115,51,0.15); border: 1px solid var(--copper-dark);
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  background: rgba(184,115,51,0.15); border: 1px solid var(--copper-dark);
   color: var(--copper-light); border-radius: 3px; padding: 0.2rem 0.5rem;
   font-size: 0.7rem; margin: 0.2rem;
 }
+.connection-tag .chip-x {
+  background: none; border: none; color: var(--copper-light);
+  cursor: pointer; padding: 0; font-size: 0.95rem; line-height: 1;
+}
+.connection-tag .chip-x:hover { color: var(--text); }
 
 /* Wiki pages list */
 .wiki-page { padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.8rem; color: var(--text-dim); }

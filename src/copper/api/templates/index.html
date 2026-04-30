@@ -52,6 +52,23 @@
         <!-- Stats -->
         <div class="card" id="mind-stats"></div>
 
+        <!-- Connections -->
+        <div class="card">
+          <div class="card-title">🔗 <span class="cosmere">Connections</span></div>
+          <div id="connections-list" class="text-dim">—</div>
+          <form id="link-form" class="flex" style="gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap"
+                onsubmit="linkMind(event)">
+            <select id="link-target" style="margin:0;flex:1 1 180px;min-width:0">
+              <option value="">— mind to link —</option>
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">Link</button>
+          </form>
+          <p class="text-dim" style="font-size:0.7rem;margin-top:0.5rem">
+            Linked minds participate in <span class="cosmere">tap</span> queries when
+            <em>Include linked minds</em> is enabled.
+          </p>
+        </div>
+
         <!-- Store -->
         <div class="card">
           <div class="card-title">📥 <span class="cosmere">Store</span> a source</div>
@@ -215,8 +232,10 @@
           <div><div class="stat-value">${stats.wiki_pages}</div><div class="stat-label">wiki pages</div></div>
           <div><div class="stat-value">${stats.linked_minds.length}</div><div class="stat-label">linked minds</div></div>
         </div>
-        ${stats.linked_minds.length ? `<div class="text-dim">Linked: ${stats.linked_minds.map(m => `<span class="connection-tag">${m}</span>`).join('')}</div>` : ''}
       `;
+
+      // Connections card (chips + dropdown)
+      loadConnections(name);
 
       // Wiki pages list
       document.getElementById('wiki-pages-list').innerHTML = pages.length
@@ -228,6 +247,55 @@
       document.getElementById('polish-result').style.display = 'none';
       document.getElementById('store-result').textContent = '';
       clearChat();
+    }
+
+    // ----------------------------------------------------------------
+    // Connections (link / unlink)
+    // ----------------------------------------------------------------
+    async function loadConnections(name) {
+      try {
+        const graph = await fetch('/minds/graph/all').then(r => r.json());
+        const me = graph.nodes.find(n => n.name === name);
+        if (!me) return;
+        const linked = me.links || [];
+        const others = graph.nodes
+          .filter(n => n.name !== name && !linked.includes(n.name))
+          .map(n => n.name);
+
+        document.getElementById('connections-list').innerHTML = linked.length
+          ? linked.map(n =>
+              `<span class="connection-tag">${n}` +
+              `<button class="chip-x" title="Unlink" onclick="unlinkMind('${n}')">×</button></span>`
+            ).join('')
+          : '<span class="text-dim">No linked minds yet.</span>';
+
+        const sel = document.getElementById('link-target');
+        sel.innerHTML = '<option value="">— mind to link —</option>' +
+          others.map(n => `<option value="${n}">${n}</option>`).join('');
+        document.getElementById('link-form').style.display = others.length ? '' : 'none';
+      } catch (e) { /* silent — non-critical */ }
+    }
+
+    async function linkMind(ev) {
+      ev.preventDefault();
+      const target = document.getElementById('link-target').value;
+      if (!target || !currentMind) return;
+      const res = await fetch('/minds/link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name_a: currentMind, name_b: target }),
+      });
+      if (res.ok) selectMind(currentMind);
+    }
+
+    async function unlinkMind(target) {
+      if (!currentMind) return;
+      const res = await fetch('/minds/link', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name_a: currentMind, name_b: target }),
+      });
+      if (res.ok) selectMind(currentMind);
     }
 
     // ----------------------------------------------------------------
