@@ -5,4 +5,4 @@ Inspired by Karpathy's wiki system and the Copperminds of Brandon Sanderson's Co
 A Feruchemist stores memories in copper. We store knowledge.
 """
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"

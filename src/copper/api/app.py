@@ -18,7 +18,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Copper",
         description="Mentecobres — AI-maintained knowledge bases",
-        version="0.1.0",
+        version="1.0.0",
         docs_url="/api/docs",
         redoc_url="/api/redoc",
     )

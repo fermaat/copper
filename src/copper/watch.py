@@ -113,12 +113,12 @@ def watch_raw_dir(
     class _WatchdogBridge(FileSystemEventHandler):
         def on_created(self, event: FileCreatedEvent) -> None:  # type: ignore[override]
             if not event.is_directory:
-                handler_obj.process(Path(event.src_path))
+                handler_obj.process(Path(str(event.src_path)))
 
         def on_moved(self, event: FileMovedEvent) -> None:  # type: ignore[override]
             # Handles files moved/renamed into raw/ (e.g., drag-and-drop on some OSes)
             if not event.is_directory:
-                handler_obj.process(Path(event.dest_path))
+                handler_obj.process(Path(str(event.dest_path)))
 
     observer = Observer()
     observer.schedule(_WatchdogBridge(), str(mind.raw_dir), recursive=False)

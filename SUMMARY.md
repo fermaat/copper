@@ -15,11 +15,22 @@ src/copper/
 │   ├── plain.py         # PlainTextPlugin — .md, .txt, any UTF-8 (sniff-based detection)
 │   ├── obsidian.py      # ObsidianPlugin — normalises [[wikilinks]] and ![[embeds]]
 │   ├── pdf.py           # PDFPlugin — pdfplumber + hybrid chunking (TOC → LLM → naive)
+│   ├── image_describer.py # ImageDescriber — sends image bytes to a vision model → description text
 │   └── registry.py      # IngestRegistry — ordered dispatch; to_markdown() + to_chunks()
 ├── llm/
 │   ├── base.py          # LLMBase (abstract): complete(messages) → LLMResponse; stream()
 │   ├── mock.py          # MockLLM — deterministic fake for tests
 │   └── bridge_adapter.py # Wraps core-llm-bridge BridgeEngine → LLMBase
+├── prompts/
+│   ├── __init__.py      # render_prompt() / list_prompts() — thin wrapper around bridge's PromptManager
+│   └── *.yaml           # Built-in prompts: tap.archivist/gamemaster/scholar/inquisitor, store.archivist,
+│                        #   assay.librarian, image.visual, pdf.section
+├── retrieval/
+│   ├── base.py          # Retriever Protocol + RetrievalResult dataclass
+│   ├── llm.py           # LLMRetriever — asks the LLM to select pages from the wiki index
+│   ├── keyword.py       # KeywordRetriever — keyword matching against page slugs/titles (no LLM)
+│   ├── alloy.py         # AlloyRetriever — fuses multiple retrievers into one ordered list
+│   └── factory.py       # build_default_retriever() — LLMRetriever + KeywordRetriever via AlloyRetriever
 ├── workflows/
 │   ├── store.py         # StoreWorkflow: source → chunks → LLM → XML wiki updates → auto-polish
 │   ├── tap.py           # TapWorkflow: question (+ optional history) + wiki context → LLM → TapResult
@@ -55,6 +66,20 @@ src/copper/
 - `to_markdown(path) → str`
 - `to_chunks(path, max_chars, llm=None) → list[str]` — default: naive_split; override for smart splitting
 - `PDFPlugin` overrides `to_chunks`: TOC keyword → TOC pattern → LLM section detection → naive
+- `ImageDescriber` (`ingest/image_describer.py`) — sends image bytes to a vision provider, returns description text; used by `PDFPlugin` for diagrams. Returns `""` for decorative images.
+
+**Prompts** (`prompts/__init__.py`)
+- `render_prompt(name, **variables) → str` — renders a named YAML prompt; raises `ValueError` if unknown
+- `list_prompts(prefix=None) → list[str]` — lists registered names, optional prefix filter (e.g. `"tap."`)
+- Built-in prompts: `tap.archivist`, `tap.gamemaster`, `tap.scholar`, `tap.inquisitor`, `store.archivist`, `assay.librarian`, `image.visual`, `pdf.section`
+- User overrides via `COPPER_USER_PROMPTS_DIR` — YAML files in that dir replace built-ins by name
+
+**Retrieval** (`retrieval/`)
+- `Retriever` protocol (`base.py`): `retrieve(question, minds) → RetrievalResult`
+- `LLMRetriever` — asks LLM to pick pages from the wiki index (Phase-1 assay)
+- `KeywordRetriever` — keyword matching against slugs/titles; no LLM cost; augments LLM picks
+- `AlloyRetriever` — fuses a list of retrievers, deduplicates, respects `max_pages_total`
+- `build_default_retriever(llm)` (`factory.py`) — wires LLM + keyword into an alloy from Settings
 
 **Workflows**
 - `StoreWorkflow(mind, llm).run(path)` → `registry.to_chunks()` → per-chunk LLM call (refreshes index between chunks) → `<wiki_updates>` XML → wiki pages → auto-polish if multi-chunk → `StoreResult`
@@ -118,8 +143,8 @@ copper serve [--host] [--port] [--reload]
 - Phase 3 ✓ — FastAPI REST API + HTMX UI + Docker + SSE streaming
 - Phase 4 ✓ — PDF/Obsidian/PlainText ingest plugins, watchdog auto-ingest, smart PDF chunking
 - Phase 5 ✓ — multi-turn chat mode (stateless history, `/chat` + `/chat/stream` API, toggle UI)
+- Phase 6 ✓ — two-stage retrieval (assay: LLM index scan + keyword augment → AlloyRetriever), prompt YAML system, image describer for multimodal PDFs, tap personalities
 
 ## Known technical debt
 
-- **Tap context ceiling**: full wiki loaded per query — degrades at ~100+ pages. Planned fix: progressive disclosure (two LLM calls: index scan → relevant pages).
-- **core-llm-bridge / core-utils**: cannot push until tomorrow; Docker rebuild pending after push.
+- **Tap context ceiling**: full wiki loaded per query if retrieval falls back — degrades at ~100+ pages. The `LLMRetriever` + `KeywordRetriever` pipeline mitigates this for most queries.

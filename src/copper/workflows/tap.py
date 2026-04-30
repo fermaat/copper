@@ -11,6 +11,8 @@ this workflow.
 
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -195,14 +197,10 @@ Cite the pages you use with [Source: page-name].
 
 def _extract_connections(text: str) -> list[str]:
     """Parse [Connection: ...] markers from the LLM response."""
-    import re
-
     return re.findall(r"\[Connection:[^\]]+\]", text)
 
 
 def _save_to_outputs(question: str, response: LLMResponse, minds: list[CopperMind]) -> list[Path]:
-    from datetime import datetime
-
     date = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     slug = question[:40].lower().replace(" ", "-").replace("?", "")
     filename = f"{date}_{slug}.md"

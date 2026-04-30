@@ -50,9 +50,7 @@ _VISUAL_PREFIX_RE = re.compile(r"^\[Visual on page \d+, image \d+:\s*")
 # Words from the marker that carry no semantic signal — they appear in every
 # marker by construction and would otherwise bias the scoring towards any page
 # that already contains a visual.
-_MARKER_STOPWORDS = frozenset(
-    {"keywords", "tags", "visual", "image", "page", "pages"}
-)
+_MARKER_STOPWORDS = frozenset({"keywords", "tags", "visual", "image", "page", "pages"})
 
 # Loaded lazily via render_prompt() inside the workflow so a missing YAML
 # surfaces early with a clear error, rather than at module import time.

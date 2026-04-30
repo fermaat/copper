@@ -1,4 +1,4 @@
-# Copper
+# Copper · v1.0.0
 
 AI-maintained knowledge bases, inspired by Karpathy's wiki concept and the Cosmere's *copperminds* — repositories of pure knowledge, maintained by a Feruchemical Archivist.
 
@@ -72,21 +72,37 @@ Copperminds are stored in `~/.copper/minds/<name>/`. Set `COPPER_MINDS_DIR` to o
 ## CLI Reference
 
 ```
-copper forge <name> [--topic TEXT]          Create a coppermind
-copper store <name> <file> [--all]          Ingest a source (or all files in raw/)
-copper watch <name>                         Watch raw/ and auto-ingest new files
-copper tap <name|a,b|--all> <question>      Query one or more copperminds
-  --save                                    Save the answer to outputs/
-  --with-links                              Include linked copperminds
-copper chat <name> [--with-links]           Interactive REPL
-copper polish <name>                        Wiki health check
-copper list                                 List all copperminds
-copper status <name>                        Show stats for a coppermind
-copper link <a> <b>                         Link two copperminds
-copper unlink <a> <b>                       Remove a link
-copper graph                                Print the link graph
-copper serve [--host] [--port] [--reload]   Start the API server
+copper forge <name> [--topic TEXT]              Create a coppermind
+copper store <name> <file> [--all]              Ingest a source (or all files in raw/)
+copper watch <name>                             Watch raw/ and auto-ingest new files
+copper tap <name|a,b|--all> <question>          Query one or more copperminds
+  --save                                        Save the answer to outputs/
+  --with-links                                  Include linked copperminds
+  --personality tap.gamemaster                  Use a named personality (see below)
+copper chat <name> [--with-links]               Interactive multi-turn REPL
+  [--personality NAME]                          Personality for this session
+copper polish <name>                            Wiki health check
+copper list                                     List all copperminds
+copper status <name>                            Show stats for a coppermind
+copper link <a> <b>                             Link two copperminds
+copper unlink <a> <b>                           Remove a link
+copper graph                                    Print the link graph
+copper personalities                            List available tap personalities
+copper serve [--host] [--port] [--reload]       Start the API server
 ```
+
+### Tap personalities
+
+The Archivist's voice is configurable. Built-in personalities:
+
+| Name | Style |
+|---|---|
+| `tap.archivist` | Default — neutral, citation-focused |
+| `tap.scholar` | Academic, comparative, in-depth |
+| `tap.gamemaster` | Narrative, immersive, world-building tone |
+| `tap.inquisitor` | Socratic, challenges assumptions |
+
+Run `copper personalities` to list all registered personalities and their descriptions. Custom personalities can be added via `COPPER_USER_PROMPTS_DIR`.
 
 ---
 
@@ -296,14 +312,24 @@ src/copper/
 │   ├── plain.py          # PlainTextPlugin: .md, .txt, any UTF-8
 │   ├── obsidian.py       # ObsidianPlugin: normalises [[wikilinks]]
 │   ├── pdf.py            # PDFPlugin: pdfplumber + hybrid TOC/LLM chunking
+│   ├── image_describer.py# Vision-model descriptions for diagrams in PDFs
 │   └── registry.py       # IngestRegistry: ordered plugin dispatch
 ├── llm/
 │   ├── base.py           # LLMBase abstract interface
 │   ├── mock.py           # MockLLM for tests
 │   └── bridge_adapter.py # Adapter for core-llm-bridge (Ollama, Anthropic, OpenAI)
+├── prompts/
+│   ├── __init__.py       # render_prompt() / list_prompts() — YAML prompt registry
+│   └── *.yaml            # Built-in prompts (tap personalities, store archivist, etc.)
+├── retrieval/
+│   ├── base.py           # Retriever protocol + RetrievalResult
+│   ├── llm.py            # LLMRetriever: LLM picks relevant pages from the index
+│   ├── keyword.py        # KeywordRetriever: keyword match, no LLM cost
+│   ├── alloy.py          # AlloyRetriever: fuses multiple retriever results
+│   └── factory.py        # build_default_retriever() — wires the pipeline from Settings
 ├── workflows/
 │   ├── store.py          # Source → chunks → LLM → wiki pages (+ auto-polish)
-│   ├── tap.py            # Question → wiki context → LLM → answer
+│   ├── tap.py            # Question → two-stage retrieval → LLM → answer
 │   └── polish.py         # Wiki audit → lint report
 ├── api/
 │   ├── app.py            # FastAPI factory
@@ -317,3 +343,5 @@ src/copper/
 ```
 
 LLM integration is decoupled behind `LLMBase`. The real provider is an optional dependency — the core system works entirely with `MockLLM` out of the box.
+
+**Tap retrieval** works in two stages: first an LLM scan of the wiki index identifies the most relevant pages, then a keyword pass augments the selection. The two results are fused before the answering call — avoiding the "full wiki in context" problem at scale.

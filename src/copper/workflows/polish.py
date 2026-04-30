@@ -8,6 +8,7 @@ orphan pages, and missing citations. Produces a lint report.
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 from copper.core.coppermind import CopperMind
 from copper.core.wiki import WikiManager
@@ -128,7 +129,7 @@ class PolishResult:
     def __init__(
         self,
         mind_name: str,
-        report_path,
+        report_path: Path,
         report_text: str,
         structural_issues: list[str],
         tokens_used: int,
