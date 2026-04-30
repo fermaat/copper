@@ -45,3 +45,6 @@ logs/*.log
 # Project-specific
 CLAUDE.md
 idea.md
+
+# Local sample inputs and extraction dumps (debug/diagnostic, not consumed by src/)
+data/
