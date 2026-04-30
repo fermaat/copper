@@ -91,11 +91,11 @@
           <div class="card-title">🔍 <span class="cosmere">Tap</span> the coppermind</div>
 
           <!-- Shared controls -->
-          <div class="flex" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
-            <select id="shared-personality" title="Voice used to answer" style="margin:0;flex:1 1 180px;min-width:0">
+          <div style="margin-bottom:1rem;display:flex;flex-direction:column;gap:0.5rem">
+            <select id="shared-personality" title="Voice used to answer" style="margin:0;width:100%">
               <option value="">— personality —</option>
             </select>
-            <label style="margin:0;display:flex;align-items:center;gap:0.4rem;flex:1 1 180px;min-width:0">
+            <label style="margin:0;display:flex;align-items:center;gap:0.4rem">
               <input type="checkbox" id="shared-with-links"> Include linked minds
             </label>
           </div>
@@ -206,6 +206,33 @@
     }
     loadTapPersonalities();
 
+    // Decorate each sidebar mind item with a "🔗 N" badge if it has links.
+    function _applySidebarBadges(graph) {
+      for (const node of graph.nodes) {
+        const item = document.getElementById('nav-' + node.name);
+        if (!item) continue;
+        let badge = item.querySelector('.mind-link-badge');
+        if (node.links.length > 0) {
+          if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'mind-link-badge';
+            item.appendChild(badge);
+          }
+          badge.textContent = `🔗 ${node.links.length}`;
+          badge.title = 'Linked: ' + node.links.join(', ');
+        } else if (badge) {
+          badge.remove();
+        }
+      }
+    }
+    async function refreshSidebarBadges() {
+      try {
+        const graph = await fetch('/minds/graph/all').then(r => r.json());
+        _applySidebarBadges(graph);
+      } catch (e) { /* silent — non-critical */ }
+    }
+    refreshSidebarBadges();
+
     // ----------------------------------------------------------------
     // Mind selection
     // ----------------------------------------------------------------
@@ -273,6 +300,9 @@
         sel.innerHTML = '<option value="">— mind to link —</option>' +
           others.map(n => `<option value="${n}">${n}</option>`).join('');
         document.getElementById('link-form').style.display = others.length ? '' : 'none';
+
+        // Keep the sidebar badges in sync — graph is already loaded above.
+        _applySidebarBadges(graph);
       } catch (e) { /* silent — non-critical */ }
     }
 

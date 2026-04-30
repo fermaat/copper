@@ -40,7 +40,8 @@ body {
 /* Nav minds list */
 .nav-section { font-size: 0.65rem; color: var(--copper); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 0.75rem; }
 .mind-item {
-  display: block; padding: 0.5rem 0.75rem; border-radius: 4px;
+  display: block; position: relative;
+  padding: 0.5rem 0.75rem; border-radius: 4px;
   cursor: pointer; font-size: 0.8rem; color: var(--text-dim);
   border: 1px solid transparent; margin-bottom: 0.25rem;
   transition: all 0.15s;
@@ -49,6 +50,13 @@ body {
   background: rgba(184,115,51,0.1); border-color: var(--copper-dark); color: var(--text);
 }
 .mind-item .mind-topic { font-size: 0.65rem; color: var(--text-dim); margin-top: 0.15rem; }
+.mind-link-badge {
+  position: absolute; top: 0.35rem; right: 0.5rem;
+  font-size: 0.6rem; line-height: 1.1; color: var(--copper-light);
+  background: rgba(184,115,51,0.15); border: 1px solid var(--copper-dark);
+  border-radius: 3px; padding: 0.05rem 0.3rem;
+  pointer-events: none;
+}
 
 /* Forge button */
 .btn-forge {
