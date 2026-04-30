@@ -14,3 +14,10 @@ template: |
   - If the source is in English, the wiki pages MUST be in English.
   - If the source is in Spanish, the wiki pages MUST be in Spanish.
   - Never translate during transcription — preserve the original language and nuance.
+
+  UPDATE RULE (critical):
+  - When updating an existing page (action="update"), you MUST preserve ALL existing
+    content and ONLY add new information. Do NOT rewrite or replace the page.
+  - Keep all existing sections, stats, and descriptions intact.
+  - Append new information at the end or add new subsections.
+  - Never remove or overwrite existing content when updating.

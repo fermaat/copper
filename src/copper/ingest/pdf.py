@@ -346,6 +346,10 @@ class PDFPlugin(IngestPlugin):
                     image_filename = f"{source_slug}-p{page.page_number}-img{idx}.png"
                     try:
                         (save_dir / image_filename).write_bytes(image_bytes)
+                        # Also save the description to raw/descriptions/ for debugging
+                        desc_dir = save_dir.parent / "descriptions"
+                        desc_dir.mkdir(parents=True, exist_ok=True)
+                        (desc_dir / image_filename.replace(".png", ".txt")).write_text(desc)
                     except OSError as exc:
                         logger.warning(f"[pdf] Could not save image {image_filename}: {exc}")
                 # Structured marker that survives the store LLM's rewrites —

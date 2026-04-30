@@ -1,18 +1,22 @@
 name: image.visual
 description: |
-  User prompt for the multimodal image describer. The model must describe
-  only what is visually seen, and respond DECORATIVE for images that are
-  mostly text already captured by OCR or for purely ornamental figures.
+  User prompt for the multimodal image describer. 
+  Generates descriptions and extracts key entities for semantic matching.
 template: |
-  Describe the VISUAL content of this image — only what can be SEEN, not what can be READ.
-  Focus on: character portraits (appearance, pose, clothing, anatomy, colours),
-  maps, diagrams, illustrations, infographics, scenes.
-  Keep it to 2-3 sentences, concrete and factual.
+  Describe the VISUAL content of this image following these rules:
+  
+  1. ANALYZE: Identify characters, creatures, locations, or diagrams.
+  2. IDENTIFY ENTITIES: If the image has labels, text, or clearly represents a specific entity (e.g., "Yu-Thorak", "Urithiru"), extract those names.
+  3. DESCRIBE: Provide 2-3 factual sentences about appearance, colors, and composition.
+  4. FORMAT: Start with the name of the entity (if known), then the description, and end with keywords.
+  
+  Format example:
+  "Yu-Thorak. A massive grey-blue creature with segmented skin and hooked jaws on a rocky coast. (Keywords: Yu-Thorak, monster, coastal, crustacean)"
 
-  Reply with EXACTLY the single word DECORATIVE (nothing else) in any of these cases:
-  - The image is primarily TEXT (stat blocks, rule tables, sidebars, page numbers,
-    credits, footers) — that text will already be extracted from the page prose,
-    so describing it again is pure noise.
-  - The image is a border, ornament, small icon, or stylised flourish with no
-    identifiable subject (character, place, object, scene, or diagram).
-  - The image is purely abstract with no recognisable visual content.
+  ---
+  CRITICAL RULE: Reply with EXACTLY the single word DECORATIVE (nothing else) if:
+  - The image is a border, ornament, flourish, or purely abstract.
+  - The image is ONLY a page number, footer, or tiny logo.
+  - It's a small icon that adds no informational value.
+
+  DO NOT reply DECORATIVE for portraits, maps, diagrams, or stat blocks.

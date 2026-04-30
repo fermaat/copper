@@ -94,7 +94,7 @@ class Settings(CoreSettings):
     # Heuristic filter applied before sending images to the multimodal model.
     copper_pdf_min_image_width: int = 120
     copper_pdf_min_image_height: int = 120
-    copper_pdf_min_image_area: int = 40_000  # px²
+    copper_pdf_min_image_area: int = 20_000  # pts² (≈141×141 pts, ~2 in per side)
     # Persist described images to disk so the UI can render them alongside
     # descriptions. Images live in <mind>/raw/images/.
     copper_ingest_save_images: bool = True

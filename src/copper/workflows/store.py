@@ -8,6 +8,8 @@ chunks so they fit within the model's context window.
 
 from __future__ import annotations
 
+import re
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,15 +33,25 @@ MAX_CHUNK_CHARS = settings.copper_store_max_chunk_chars
 # 1 retry is usually enough; the second attempt uses a more emphatic prompt.
 _MAX_XML_RETRIES = 1
 
-# Hoisted so retry logic can quickly check "is there anything parseable here?"
-# without the side effects of _apply_wiki_updates.
-import re as _re
-
 # action is optional — gemma4 and similar sometimes omit it for new pages.
 # When missing we default to "create" in the consumer.
-_PAGE_PATTERN = _re.compile(
+_PAGE_PATTERN = re.compile(
     r'<page\s+slug="([^"]+)"\s+title="([^"]+)"(?:\s+action="([^"]+)")?[^>]*>\s*<content>(.*?)</content>\s*</page>',
-    _re.DOTALL,
+    re.DOTALL,
+)
+
+# Visual marker emitted by the PDF ingest. Carries page+image coordinates and a
+# short description with optional "(Keywords: …)" tail used by the safety net.
+_VISUAL_MARKER_RE = re.compile(r"\[Visual on page \d+, image \d+:[^\]]+\]")
+_VISUAL_MARKER_ID_RE = re.compile(r"\[Visual on page \d+, image \d+:")
+_VISUAL_KEYWORDS_RE = re.compile(r"\((?:keywords|tags):\s*([^)]+)\)", re.IGNORECASE)
+_VISUAL_PREFIX_RE = re.compile(r"^\[Visual on page \d+, image \d+:\s*")
+
+# Words from the marker that carry no semantic signal — they appear in every
+# marker by construction and would otherwise bias the scoring towards any page
+# that already contains a visual.
+_MARKER_STOPWORDS = frozenset(
+    {"keywords", "tags", "visual", "image", "page", "pages"}
 )
 
 # Loaded lazily via render_prompt() inside the workflow so a missing YAML
@@ -68,8 +80,6 @@ class StoreWorkflow:
         # Copy to raw/ if not already there
         raw_path = self.mind.raw_dir / source_path.name
         if source_path.resolve() != raw_path.resolve():
-            import shutil
-
             shutil.copy2(source_path, raw_path)
 
         source_name = raw_path.name
@@ -125,6 +135,11 @@ class StoreWorkflow:
                 + (f", {visual_count} visual markers" if visual_count else "")
                 + ")..."
             )
+
+            # Snapshot pre-LLM bodies so the safety net can restore visual
+            # markers the LLM may silently drop during action="update".
+            pre_llm_bodies = {p.name: p.body for p in self.wiki.all_pages()}
+
             response_text, attempt_tokens, attempt_cost = _send_with_retry(
                 self.llm, render_prompt(_STORE_SYSTEM_PROMPT), prompt
             )
@@ -133,7 +148,13 @@ class StoreWorkflow:
 
             pages = _apply_wiki_updates(response_text, source_name, self.wiki)
             all_pages.extend(pages)
-            _inject_missing_visual_markers(chunk, pages, self.wiki)
+
+            # Restrict the snapshot to pages the LLM actually touched — the
+            # only ones whose markers could have been lost by an update.
+            existing_before = {
+                slug: pre_llm_bodies[slug] for slug in pages if slug in pre_llm_bodies
+            }
+            _inject_missing_visual_markers(chunk, pages, self.wiki, existing_before)
             logger.info(
                 f"[store] Ingot {i}/{total_ingots} forged: {len(pages)} page(s) written → {pages}"
             )
@@ -167,41 +188,148 @@ class StoreWorkflow:
         )
 
 
+# ---------------------------------------------------------------------- #
+# Visual marker helpers                                                   #
+# ---------------------------------------------------------------------- #
+
+
 def _extract_visual_markers(text: str) -> list[str]:
-    import re
-    return re.findall(r"\[Visual on page \d+, image \d+:[^\]]+\]", text)
+    return _VISUAL_MARKER_RE.findall(text)
+
+
+def _marker_id(marker: str) -> str:
+    """Stable identifier '[Visual on page N, image M:' — used for dedup only."""
+    m = _VISUAL_MARKER_ID_RE.match(marker)
+    return m.group(0) if m else marker
+
+
+def _marker_keywords(marker: str) -> list[str]:
+    """Extract the comma-separated keyword list from '(Keywords: a, b, c)'."""
+    m = _VISUAL_KEYWORDS_RE.search(marker)
+    if not m:
+        return []
+    return [k.strip().lower() for k in m.group(1).split(",") if k.strip()]
+
+
+def _marker_description_words(marker: str) -> list[str]:
+    """Distinctive words from the description body, minus structural boilerplate.
+
+    Skips the leading "[Visual on page N, image M:" prefix and the trailing
+    "(Keywords: …)" tail, then drops short tokens and known boilerplate.
+    """
+    body = _VISUAL_PREFIX_RE.sub("", marker)
+    body = _VISUAL_KEYWORDS_RE.sub("", body)
+    body = body.rstrip("] ").strip().lower()
+    return [w for w in re.findall(r"\w+", body) if len(w) > 4 and w not in _MARKER_STOPWORDS]
+
+
+def _pick_best_slug(marker: str, bodies: dict[str, str]) -> str:
+    """Pick the wiki slug most semantically related to a visual marker.
+
+    Scoring (higher is better):
+    - +100 if any marker keyword appears in the slug name itself.
+    - +20 per marker keyword found in the page body.
+    - +50 if the slug-as-words appears verbatim inside the marker.
+    - +2 per distinctive description word found in the page body.
+
+    Ties resolve to the first slug in iteration order.
+    """
+    kws = _marker_keywords(marker)
+    desc_words = _marker_description_words(marker)
+    marker_low = marker.lower()
+
+    best_slug = next(iter(bodies))
+    best_score = -1
+    for slug, body in bodies.items():
+        body_low = body.lower()
+        slug_words = slug.replace("-", " ").lower()
+        score = 0
+        if any(k in slug_words for k in kws):
+            score += 100
+        score += sum(20 for k in kws if k in body_low)
+        if slug_words and slug_words in marker_low:
+            score += 50
+        score += sum(2 for w in desc_words if w in body_low)
+        if score > best_score:
+            best_score = score
+            best_slug = slug
+    return best_slug
 
 
 def _inject_missing_visual_markers(
-    chunk: str, page_slugs: list[str], wiki: WikiManager
+    chunk: str,
+    page_slugs: list[str],
+    wiki: WikiManager,
+    existing_before: dict[str, str] | None = None,
 ) -> None:
-    """Safety net: append markers the LLM dropped into the first written page.
+    """Safety net for visual markers after the LLM has written its pages.
 
-    Only fires when a marker isn't found in any page of the ingot, so it never
-    duplicates markers the LLM placed correctly.
+    Two responsibilities, in order:
+    1. Restore markers that existed in a page BEFORE the LLM update but
+       disappeared from its rewritten body.
+    2. Inject any chunk markers the LLM omitted entirely, scored against the
+       touched pages.
+
+    Each affected page is written at most once, regardless of how many
+    markers were restored or injected on it.
     """
-    markers = _extract_visual_markers(chunk)
-    if not markers or not page_slugs:
+    if not page_slugs:
         return
 
-    wiki_pages = [(slug, wiki.page(slug)) for slug in page_slugs]
-    wiki_pages = [(slug, p) for slug, p in wiki_pages if p.exists()]
-    if not wiki_pages:
+    # Read the current (post-LLM) body of every touched page that exists.
+    bodies: dict[str, str] = {}
+    for slug in page_slugs:
+        p = wiki.page(slug)
+        if p.exists():
+            bodies[slug] = p.body
+    if not bodies:
         return
 
-    target_slug, target_page = wiki_pages[0]
-    missing = [
-        m for m in markers
-        if not any(m in p.body for _, p in wiki_pages)
-    ]
-    if not missing:
-        return
+    dirty: set[str] = set()
 
-    logger.info(
-        f"[store] Safety net: injecting {len(missing)} marker(s) into '{target_slug}'"
-    )
-    new_body = target_page.body.rstrip() + "\n\n" + "\n\n".join(missing) + "\n"
-    wiki.update_page(target_slug, new_body)
+    # 1. Restore markers the LLM dropped during an update.
+    if existing_before:
+        for slug, old_body in existing_before.items():
+            if slug not in bodies:
+                continue
+            old_markers = _extract_visual_markers(old_body)
+            if not old_markers:
+                continue
+            new_ids = {_marker_id(m) for m in _extract_visual_markers(bodies[slug])}
+            lost = [m for m in old_markers if _marker_id(m) not in new_ids]
+            if not lost:
+                continue
+            logger.info(
+                f"[store] Restoring {len(lost)} previous marker(s) on '{slug}' "
+                "lost during update"
+            )
+            bodies[slug] = bodies[slug].rstrip() + "\n\n" + "\n\n".join(lost) + "\n"
+            dirty.add(slug)
+
+    # 2. Inject orphan markers from the current chunk.
+    chunk_markers = _extract_visual_markers(chunk)
+    if chunk_markers:
+        present_ids = {
+            _marker_id(m) for body in bodies.values() for m in _extract_visual_markers(body)
+        }
+        for marker in chunk_markers:
+            m_id = _marker_id(marker)
+            if m_id in present_ids:
+                continue
+            best_slug = _pick_best_slug(marker, bodies)
+            logger.info(f"[store] Injecting orphan marker {m_id} into '{best_slug}'")
+            bodies[best_slug] = bodies[best_slug].rstrip() + "\n\n" + marker + "\n"
+            dirty.add(best_slug)
+            present_ids.add(m_id)
+
+    # 3. Persist each modified page exactly once.
+    for slug in dirty:
+        wiki.update_page(slug, bodies[slug])
+
+
+# ---------------------------------------------------------------------- #
+# Prompt assembly + LLM IO                                                #
+# ---------------------------------------------------------------------- #
 
 
 def _build_store_prompt(
@@ -235,10 +363,10 @@ def _build_store_prompt(
         markers_str = "\n".join(f"  {m}" for m in visual_markers)
         images_section = f"""
 ## Images in this fragment
-The following are descriptions of figures extracted from this document fragment.
-For each one, if the described content fits a wiki page you are writing, embed the
-full marker verbatim (copy it exactly as shown — the UI uses it to render the image).
-Only include a marker in pages where the image genuinely complements the content.
+The following image markers were extracted from this document fragment.
+You MUST embed every marker in exactly one of the pages you write — the page whose
+content is most closely related to the image. Copy each marker verbatim; the UI
+uses it to render the image alongside the text. Do not omit any marker.
 
 {markers_str}
 
@@ -343,9 +471,8 @@ def _apply_wiki_updates(llm_output: str, source_name: str, wiki: WikiManager) ->
     By the time this is called, ``_send_with_retry`` has already exhausted its
     retries — so a missing XML structure here means we genuinely fall back.
     """
-    import re
-
     pages_written: list[str] = []
+    link_pattern = re.compile(r"\[\[([^\]]+)\]\]")
 
     for m in _PAGE_PATTERN.finditer(llm_output):
         slug, title, action, content = (
@@ -358,6 +485,11 @@ def _apply_wiki_updates(llm_output: str, source_name: str, wiki: WikiManager) ->
             slug=slug, title=title, body=content, bump_source_count=(action == "update")
         )
         pages_written.append(slug)
+
+        # Log [[wiki links]] in the content for traceability.
+        links = link_pattern.findall(content)
+        if links:
+            logger.info(f"[store] Links in '{slug}': {links}")
 
     index_match = re.search(r"<index>(.*?)</index>", llm_output, re.DOTALL)
     if index_match:
