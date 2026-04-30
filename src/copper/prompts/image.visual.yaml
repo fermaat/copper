@@ -18,5 +18,13 @@ template: |
   - The image is a border, ornament, flourish, or purely abstract.
   - The image is ONLY a page number, footer, or tiny logo.
   - It's a small icon that adds no informational value.
+  - The image is PRIMARILY a block of body text or lore prose rendered on a
+    styled or textured background (paragraphs and sentences are the dominant
+    content). The page's text is extracted separately, so describing it again
+    as an image adds nothing.
 
   DO NOT reply DECORATIVE for portraits, maps, diagrams, or stat blocks.
+  A stat block is a structured table of numerical attributes (e.g. Physical /
+  Cognitive / Spiritual scores, ability tables, action lists with mechanics) —
+  these ARE valuable. A page of narrative paragraphs is NOT a stat block, even
+  if it has section headings.

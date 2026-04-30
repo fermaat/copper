@@ -38,6 +38,12 @@ _LLM_SAMPLE_CHARS = 4_000
 _MIN_IMAGE_WIDTH = settings.copper_pdf_min_image_width
 _MIN_IMAGE_HEIGHT = settings.copper_pdf_min_image_height
 _MIN_IMAGE_AREA = settings.copper_pdf_min_image_area
+# Page-spanning images (covering ≥ this fraction of the page area) are usually
+# background rasters or flattened page renders, not real illustrations. We only
+# skip them when the page already has substantial extracted text — otherwise
+# the image IS the page (scanned PDF / art book) and we still want it.
+_PAGE_SPAN_THRESHOLD = settings.copper_pdf_page_span_threshold
+_PAGE_SPAN_SKIP_MIN_TEXT = settings.copper_pdf_page_span_skip_min_text
 
 _LLM_SECTION_PROMPT_NAME = "pdf.section"
 
@@ -165,6 +171,7 @@ class PDFPlugin(IngestPlugin):
                             f"{len(text):,} chars, "
                             f"{img_stats['raw']} images "
                             f"(filtered={img_stats['filtered']}, "
+                            f"page_spanning={img_stats['page_spanning']}, "
                             f"described={img_stats['described']}, "
                             f"decorative={img_stats['decorative']}, "
                             f"failed={img_stats['failed']}) "
@@ -194,110 +201,120 @@ class PDFPlugin(IngestPlugin):
         source_slug: str = "",
         save_dir: Path | None = None,
     ) -> tuple[str, dict[str, int]]:
-        """Extract images that pass the heuristic filter and describe them.
+        """Extract images that pass the heuristic filters and describe them.
 
-        If ``save_dir`` is provided, the cropped PNG of each described image is
-        saved to ``<save_dir>/<source_slug>-pN-imgM.png`` so the UI can render
-        it alongside the description marker.
+        Pipeline:
+        1. Clamp every image's bbox to the page bounds; drop degenerates.
+        2. Filter by minimum clamped width / height / area.
+        3. Skip page-spanning backgrounds when the page has its own text.
+        4. Dedup by bbox containment (keep largest, drop sub-regions).
+        5. Render the clamped crop, dedup by pixel hash, send to the describer.
 
-        Returns (markdown_block, stats) where stats is a dict with keys:
-        raw, filtered, described, decorative, failed.
+        If ``save_dir`` is provided, the PNG of each described image is saved
+        to ``<save_dir>/<source_slug>-pN-imgM.png`` so the UI can render it
+        alongside the description marker.
+
+        Returns (markdown_block, stats) where stats has keys:
+        raw, filtered, page_spanning, described, decorative, failed.
         """
         images = getattr(page, "images", None) or []
-        stats = {"raw": len(images), "filtered": 0, "described": 0, "decorative": 0, "failed": 0}
+        stats = {
+            "raw": len(images),
+            "filtered": 0,
+            "page_spanning": 0,
+            "described": 0,
+            "decorative": 0,
+            "failed": 0,
+        }
         if not images:
             return "", stats
 
         import hashlib
         import io
 
-        # --- Dedup pass 1: bbox containment ---
-        # Sort by area descending so the largest version is kept and any smaller
-        # crop/zoom of the same illustration (a common PDF pattern) gets dropped.
-        def _area(img: dict) -> float:
-            try:
-                return float(img.get("width") or 0) * float(img.get("height") or 0)
-            except (TypeError, ValueError):
-                return 0.0
+        px0, py0, px1, py1 = page.bbox
+        page_area = max((px1 - px0) * (py1 - py0), 1.0)
 
-        def _containment(img: dict, kept_bbox: tuple) -> float:
+        # 1. Clamp each image to the page; drop anything that vanishes.
+        clamped: list[tuple[dict, tuple[float, float, float, float]]] = []
+        for img in images:
             try:
-                ax0 = float(img.get("x0") or 0)
-                ay0 = float(img.get("top") or 0)
-                ax1 = float(img.get("x1") or 0)
-                ay1 = float(img.get("bottom") or 0)
+                bbox = (
+                    max(float(img.get("x0") or 0), px0),
+                    max(float(img.get("top") or 0), py0),
+                    min(float(img.get("x1") or 0), px1),
+                    min(float(img.get("bottom") or 0), py1),
+                )
             except (TypeError, ValueError):
-                return 0.0
-            ix0 = max(ax0, kept_bbox[0])
-            iy0 = max(ay0, kept_bbox[1])
-            ix1 = min(ax1, kept_bbox[2])
-            iy1 = min(ay1, kept_bbox[3])
+                stats["filtered"] += 1
+                continue
+            if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
+                stats["filtered"] += 1
+                continue
+            clamped.append((img, bbox))
+
+        # 2. Size filter on the *clamped* dimensions — catches off-page slivers.
+        sized: list[tuple[dict, tuple[float, float, float, float]]] = []
+        for img, bbox in clamped:
+            cw = bbox[2] - bbox[0]
+            ch = bbox[3] - bbox[1]
+            if cw < _MIN_IMAGE_WIDTH or ch < _MIN_IMAGE_HEIGHT or cw * ch < _MIN_IMAGE_AREA:
+                stats["filtered"] += 1
+                continue
+            sized.append((img, bbox))
+
+        # 3. Skip page-spanning backgrounds when the page already has its own
+        #    text. Without text we keep them — the image IS the content.
+        if len(context_text or "") >= _PAGE_SPAN_SKIP_MIN_TEXT:
+            kept: list[tuple[dict, tuple[float, float, float, float]]] = []
+            for img, bbox in sized:
+                bbox_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+                if bbox_area / page_area >= _PAGE_SPAN_THRESHOLD:
+                    stats["page_spanning"] += 1
+                    continue
+                kept.append((img, bbox))
+            sized = kept
+
+        # 4. Bbox-containment dedup on clamped bboxes. Sort by clamped area
+        #    descending so we keep the largest version and drop sub-regions.
+        def _area(bbox: tuple[float, float, float, float]) -> float:
+            return (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+
+        def _contained_fraction(
+            inner: tuple[float, float, float, float],
+            outer: tuple[float, float, float, float],
+        ) -> float:
+            ix0 = max(inner[0], outer[0])
+            iy0 = max(inner[1], outer[1])
+            ix1 = min(inner[2], outer[2])
+            iy1 = min(inner[3], outer[3])
             if ix1 <= ix0 or iy1 <= iy0:
                 return 0.0
             inter = (ix1 - ix0) * (iy1 - iy0)
-            area_a = (ax1 - ax0) * (ay1 - ay0)
-            return inter / area_a if area_a > 0 else 0.0
+            inner_area = _area(inner)
+            return inter / inner_area if inner_area > 0 else 0.0
 
-        try:
-            kept_bboxes: list[tuple] = []
-            deduped: list[dict] = []
-            for img in sorted(images, key=_area, reverse=True):
-                try:
-                    bbox = (
-                        float(img.get("x0") or 0),
-                        float(img.get("top") or 0),
-                        float(img.get("x1") or 0),
-                        float(img.get("bottom") or 0),
-                    )
-                except (TypeError, ValueError):
-                    deduped.append(img)
-                    continue
-                if any(_containment(img, kb) > 0.6 for kb in kept_bboxes):
-                    stats["filtered"] += 1
-                    continue
-                kept_bboxes.append(bbox)
-                deduped.append(img)
-            if stats["raw"] - len(deduped):
-                logger.debug(
-                    f"[pdf] Page {page.page_number}: bbox dedup removed "
-                    f"{stats['raw'] - len(deduped)}/{stats['raw']} images"
-                )
-        except Exception:
-            logger.opt(exception=True).warning(
-                f"[pdf] Page {page.page_number}: bbox dedup failed, processing all"
-            )
-            deduped = list(images)
+        deduped: list[tuple[dict, tuple[float, float, float, float]]] = []
+        kept_bboxes: list[tuple[float, float, float, float]] = []
+        for img, bbox in sorted(sized, key=lambda pair: _area(pair[1]), reverse=True):
+            if any(_contained_fraction(bbox, kb) > 0.6 for kb in kept_bboxes):
+                stats["filtered"] += 1
+                continue
+            kept_bboxes.append(bbox)
+            deduped.append((img, bbox))
 
+        # 5. Render + pixel-hash dedup + describe.
         descriptions: list[str] = []
         seen_hashes: set[str] = set()
 
-        for idx, img in enumerate(deduped):
-            width = float(img.get("width") or 0)
-            height = float(img.get("height") or 0)
-            if width < _MIN_IMAGE_WIDTH or height < _MIN_IMAGE_HEIGHT:
-                stats["filtered"] += 1
-                continue
-            if width * height < _MIN_IMAGE_AREA:
-                stats["filtered"] += 1
-                continue
-
+        for idx, (img, bbox) in enumerate(deduped):
+            cw = bbox[2] - bbox[0]
+            ch = bbox[3] - bbox[1]
             try:
-                # Clamp bbox to page bounds — pdfplumber often reports image
-                # boxes slightly outside the page due to float rounding.
-                px0, py0, px1, py1 = page.bbox
-                bbox = (
-                    max(float(img["x0"]), px0),
-                    max(float(img["top"]), py0),
-                    min(float(img["x1"]), px1),
-                    min(float(img["bottom"]), py1),
-                )
-                if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
-                    stats["filtered"] += 1
-                    continue  # degenerate after clamping
                 crop = page.within_bbox(bbox)
                 logger.debug(
                     f"[pdf] Rendering image {idx} on page {page.page_number}: "
-                    f"bbox={bbox} size={width:.0f}×{height:.0f}pts"
+                    f"bbox={bbox} clamped_size={cw:.0f}×{ch:.0f}pts"
                 )
                 pil_img = crop.to_image(resolution=150).original
                 buf = io.BytesIO()
@@ -306,14 +323,14 @@ class PDFPlugin(IngestPlugin):
             except MemoryError:
                 logger.opt(exception=True).error(
                     f"[pdf] OOM rendering image {idx} on page {page.page_number} "
-                    f"(size {width:.0f}×{height:.0f} pts) — skipping"
+                    f"(size {cw:.0f}×{ch:.0f} pts) — skipping"
                 )
                 stats["failed"] += 1
                 continue
             except Exception:
                 logger.opt(exception=True).warning(
                     f"[pdf] Could not render image {idx} on page {page.page_number} "
-                    f"(size {width:.0f}×{height:.0f} pts)"
+                    f"(size {cw:.0f}×{ch:.0f} pts)"
                 )
                 stats["failed"] += 1
                 continue
@@ -324,9 +341,8 @@ class PDFPlugin(IngestPlugin):
                 except NameError:
                     pass
 
-            # --- Dedup pass 2: pixel hash ---
-            # Catches identical renders that survived the bbox pass (e.g. same
-            # image placed at the same size at two different positions).
+            # Pixel-hash dedup catches identical renders that slipped past the
+            # bbox pass (same source XObject placed twice at the same size).
             img_hash = hashlib.md5(image_bytes).hexdigest()
             if img_hash in seen_hashes:
                 stats["filtered"] += 1
@@ -339,22 +355,20 @@ class PDFPlugin(IngestPlugin):
             elif desc == "":
                 stats["decorative"] += 1
             else:
-                # Save the PNG to disk so the UI can render it next to the
-                # description. The filename encodes source + page + image index
-                # so later renders can look it up via the marker alone.
+                # Save the PNG so the UI can render it alongside the description.
+                # The filename encodes source + page + image index so the marker
+                # alone is enough to look it up later.
                 if save_dir is not None and source_slug:
                     image_filename = f"{source_slug}-p{page.page_number}-img{idx}.png"
                     try:
                         (save_dir / image_filename).write_bytes(image_bytes)
-                        # Also save the description to raw/descriptions/ for debugging
                         desc_dir = save_dir.parent / "descriptions"
                         desc_dir.mkdir(parents=True, exist_ok=True)
                         (desc_dir / image_filename.replace(".png", ".txt")).write_text(desc)
                     except OSError as exc:
                         logger.warning(f"[pdf] Could not save image {image_filename}: {exc}")
-                # Structured marker that survives the store LLM's rewrites —
-                # parallel to [Source: ...] which is already preserved verbatim.
-                # The image index lets the UI match this marker to the saved file.
+                # Structured marker that survives the store LLM's rewrites,
+                # parallel to [Source: ...] which is preserved verbatim.
                 descriptions.append(f"[Visual on page {page.page_number}, image {idx}: {desc}]")
                 stats["described"] += 1
 

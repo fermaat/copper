@@ -95,6 +95,11 @@ class Settings(CoreSettings):
     copper_pdf_min_image_width: int = 120
     copper_pdf_min_image_height: int = 120
     copper_pdf_min_image_area: int = 20_000  # pts² (≈141×141 pts, ~2 in per side)
+    # Page-spanning background filter — drop images whose clamped bbox covers
+    # this fraction or more of the page area, but ONLY when the page already
+    # has substantial extracted text (otherwise the image *is* the content).
+    copper_pdf_page_span_threshold: float = 0.85
+    copper_pdf_page_span_skip_min_text: int = 200
     # Persist described images to disk so the UI can render them alongside
     # descriptions. Images live in <mind>/raw/images/.
     copper_ingest_save_images: bool = True
