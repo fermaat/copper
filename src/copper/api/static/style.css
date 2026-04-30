@@ -82,6 +82,12 @@ input, textarea, select {
   font-family: inherit; font-size: 0.85rem; margin-bottom: 0.75rem;
   transition: border-color 0.15s;
 }
+/* Checkboxes/radios should keep their native size — without this they
+   inherit width:100% and padding from the rule above and end up filling
+   their flex container, pushing sibling text off-screen. */
+input[type="checkbox"], input[type="radio"] {
+  width: auto; padding: 0; margin: 0; vertical-align: middle;
+}
 input:focus, textarea:focus { outline: none; border-color: var(--copper-dark); }
 textarea { resize: vertical; min-height: 80px; }
 label { font-size: 0.7rem; color: var(--text-dim); display: block; margin-bottom: 0.3rem; }
