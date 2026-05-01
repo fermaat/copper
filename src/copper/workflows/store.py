@@ -396,11 +396,15 @@ def _build_store_prompt(
     images_section = ""
     if visual_markers:
         markers_str = "\n".join(f"  {m}" for m in visual_markers)
-        images_section = "\n" + render_prompt(
-            "store.images",
-            marker_count=len(visual_markers),
-            markers_str=markers_str,
-        ) + "\n"
+        images_section = (
+            "\n"
+            + render_prompt(
+                "store.images",
+                marker_count=len(visual_markers),
+                markers_str=markers_str,
+            )
+            + "\n"
+        )
 
     return render_prompt(
         "store.user",

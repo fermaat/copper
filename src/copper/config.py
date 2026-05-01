@@ -54,7 +54,7 @@ class Settings(CoreSettings):
 
     # ── LLM — ingest (multimodal, for describing PDF images) ────────
     # Empty provider disables image description entirely.
-    # Model MUST support vision (e.g. gemma3:12b, llava, claude-opus-4-6).
+    # Model MUST support vision (e.g. gemma3:12b, llava, claude-opus-4-7).
     copper_ingest_provider: str = ""  # empty = skip image description
     copper_ingest_model: str = ""  # empty = fall back to copper_llm_model
 

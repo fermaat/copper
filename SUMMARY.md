@@ -22,9 +22,12 @@ src/copper/
 │   ├── mock.py          # MockLLM — deterministic fake for tests
 │   └── bridge_adapter.py # Wraps core-llm-bridge BridgeEngine → LLMBase
 ├── prompts/
-│   ├── __init__.py      # render_prompt() / list_prompts() — thin wrapper around bridge's PromptManager
-│   └── *.yaml           # Built-in prompts: tap.archivist/gamemaster/scholar/inquisitor, store.archivist,
-│                        #   assay.librarian, image.visual, pdf.section
+│   ├── __init__.py      # render_prompt() / list_prompts() — registers YAMLs into bridge's PromptManager
+│   │                    #   (bypasses bridge's load_from_yaml() to preserve trailing whitespace)
+│   └── *.yaml           # Built-in prompts: tap.archivist/gamemaster/scholar/inquisitor (system + personalities),
+│                        #   tap.user, store.archivist, store.user, store.images,
+│                        #   polish.archivist, polish.user, assay.librarian, assay.user,
+│                        #   image.visual, pdf.section
 ├── retrieval/
 │   ├── base.py          # Retriever Protocol + RetrievalResult dataclass
 │   ├── llm.py           # LLMRetriever — asks the LLM to select pages from the wiki index
@@ -71,7 +74,14 @@ src/copper/
 **Prompts** (`prompts/__init__.py`)
 - `render_prompt(name, **variables) → str` — renders a named YAML prompt; raises `ValueError` if unknown
 - `list_prompts(prefix=None) → list[str]` — lists registered names, optional prefix filter (e.g. `"tap."`)
-- Built-in prompts: `tap.archivist`, `tap.gamemaster`, `tap.scholar`, `tap.inquisitor`, `store.archivist`, `assay.librarian`, `image.visual`, `pdf.section`
+- Built-in prompts (system + user templates split per workflow):
+  - **Tap personalities** (system): `tap.archivist`, `tap.gamemaster`, `tap.scholar`, `tap.inquisitor`
+  - **Tap user**: `tap.user` (shared across all personalities)
+  - **Store**: `store.archivist` (system), `store.user` (data + format spec), `store.images` (conditional markers block)
+  - **Polish**: `polish.archivist` (system), `polish.user` (audit request)
+  - **Assay/retrieval**: `assay.librarian` (system), `assay.user` (slug-selection request)
+  - **Other**: `image.visual` (vision describer), `pdf.section` (LLM TOC fallback)
+- All prompt instruction text lives in YAML; Python only assembles dynamic data (slugs, markers, schema, etc.)
 - User overrides via `COPPER_USER_PROMPTS_DIR` — YAML files in that dir replace built-ins by name
 
 **Retrieval** (`retrieval/`)
@@ -119,14 +129,23 @@ copper serve [--host] [--port] [--reload]
 
 ## Configuration (env vars, all prefixed COPPER_)
 
+Common settings — see [`docs/configuration.md`](docs/configuration.md) for the full reference (PDF tuning, retrieval ceilings, custom prompts, recipes).
+
 | Variable | Default | Notes |
 |---|---|---|
 | `COPPER_LLM_PROVIDER` | `mock` | `mock` \| `ollama` \| `anthropic` \| `openai` |
 | `COPPER_LLM_MODEL` | _(empty)_ | Required for non-mock providers |
+| `COPPER_STORE_PROVIDER` / `_MODEL` | _(empty)_ | Override for ingest + polish |
+| `COPPER_TAP_PROVIDER` / `_MODEL` | _(empty)_ | Override for tap + chat |
+| `COPPER_INGEST_PROVIDER` / `_MODEL` | _(empty)_ | Vision model for multimodal PDF ingest (empty = skip) |
+| `COPPER_TAP_PERSONALITY` | `tap.archivist` | Default tap personality (prompt name) |
+| `COPPER_USER_PROMPTS_DIR` | _(empty)_ | Folder of YAML prompts that override built-ins by name |
 | `COPPER_MINDS_DIR` | `~/.copper/minds` | Override for Docker: `/data/minds` |
 | `COPPER_OLLAMA_BASE_URL` | `http://localhost:11434` | Use `host.docker.internal` in Docker |
 | `COPPER_ANTHROPIC_API_KEY` | _(empty)_ | |
 | `COPPER_OPENAI_API_KEY` | _(empty)_ | |
+
+Resolution order: **per-mind `.copper/config.yaml` → workflow env var → generic fallback → provider default**.
 
 ## Dependencies
 

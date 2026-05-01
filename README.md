@@ -190,34 +190,30 @@ Copy `.env.example` to `.env` and adjust:
 cp .env.example .env
 ```
 
+The most common knobs:
+
 | Variable | Default | Description |
 |---|---|---|
-| `COPPER_LLM_PROVIDER` | `mock` | Fallback provider: `mock`, `ollama`, `anthropic`, `openai` |
+| `COPPER_LLM_PROVIDER` | `mock` | `mock` \| `ollama` \| `anthropic` \| `openai` |
 | `COPPER_LLM_MODEL` | _(empty)_ | Fallback model name |
-| `COPPER_STORE_PROVIDER` | _(empty)_ | Provider for store + polish (overrides fallback) |
-| `COPPER_STORE_MODEL` | _(empty)_ | Model for store + polish |
-| `COPPER_TAP_PROVIDER` | _(empty)_ | Provider for tap + chat (overrides fallback) |
-| `COPPER_TAP_MODEL` | _(empty)_ | Model for tap + chat |
+| `COPPER_STORE_PROVIDER` / `_MODEL` | _(empty)_ | Override the LLM used for ingest + polish |
+| `COPPER_TAP_PROVIDER` / `_MODEL` | _(empty)_ | Override the LLM used for tap + chat |
+| `COPPER_INGEST_PROVIDER` / `_MODEL` | _(empty)_ | Vision model for multimodal PDF ingest |
 | `COPPER_MINDS_DIR` | `~/.copper/minds` | Where copperminds are stored |
-| `COPPER_HOST` | `127.0.0.1` | API server host |
-| `COPPER_PORT` | `8000` | API server port |
-| `COPPER_RELOAD` | `false` | Hot-reload for development |
-| `LOG_LEVEL` | `INFO` | Logging level |
-| `COPPER_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
-| `COPPER_OLLAMA_TIMEOUT` | `300` | Ollama request timeout (seconds) |
-| `COPPER_ANTHROPIC_API_KEY` | _(empty)_ | Anthropic API key |
-| `COPPER_OPENAI_API_KEY` | _(empty)_ | OpenAI API key |
+| `COPPER_HOST` / `COPPER_PORT` | `127.0.0.1` / `8000` | API server bind |
 
 By default, `COPPER_LLM_PROVIDER=mock` — no real LLM calls are made.
 
+Resolution order: **per-mind override (`.copper/config.yaml`) → workflow-level env var → generic fallback → provider default**.
+
 ### Using different models for store vs. tap
 
-Store (ingestion) benefits from a more capable model; tap (queries) can use a faster local one. Configure them independently:
+Store benefits from a more capable model; tap can use a faster local one:
 
 ```bash
 # .env — index with Claude, query with Ollama
 COPPER_STORE_PROVIDER=anthropic
-COPPER_STORE_MODEL=claude-opus-4-6
+COPPER_STORE_MODEL=claude-opus-4-7
 COPPER_ANTHROPIC_API_KEY=sk-ant-...
 
 COPPER_TAP_PROVIDER=ollama
@@ -225,21 +221,23 @@ COPPER_TAP_MODEL=llama3.2
 COPPER_OLLAMA_BASE_URL=http://localhost:11434
 ```
 
-Resolution order for each workflow: **per-mind override → workflow-level env var → generic fallback**.
-
 ### Overriding models per coppermind
 
-Edit `.copper/config.yaml` inside the coppermind folder:
+Edit `<mind>/.copper/config.yaml`:
 
 ```yaml
-# ~/.copper/minds/my-mind/.copper/config.yaml
 store_provider: anthropic
 store_model: claude-sonnet-4-6
 tap_provider: ollama
 tap_model: gemma3:4b
+tap_personality: tap.gamemaster
 ```
 
 Only set the fields you want to override — absent fields inherit from the global config.
+
+### Full reference
+
+See [`docs/configuration.md`](docs/configuration.md) for every env var, including PDF ingest tuning, custom-prompt directories, retrieval ceilings, and complete recipes (all-local, hybrid, Docker).
 
 ---
 
