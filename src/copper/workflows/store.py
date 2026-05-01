@@ -344,10 +344,12 @@ def _inject_missing_visual_markers(
             best_slug = _pick_best_slug(marker, bodies)
             if best_slug is None:
                 logger.warning(
-                    f"[store] Dropping orphan marker {m_id}: no current-iteration "
-                    "page scored above the placement-confidence floor. The image "
-                    "may belong to a page from another ingot — re-run polish to "
-                    "surface the gap."
+                    f"[store] Dropping orphan marker {m_id} "
+                    f"(LLM wrote pages: {sorted(bodies.keys())}). "
+                    "No page scored above the placement-confidence floor — "
+                    "the marker's subject was likely merged into another page "
+                    "or omitted entirely. Inspect the listed pages and re-run "
+                    "polish to surface the gap."
                 )
                 continue
             logger.info(f"[store] Injecting orphan marker {m_id} into '{best_slug}'")
@@ -399,6 +401,11 @@ def _build_store_prompt(
 Each marker below describes one image and MUST appear, copied verbatim, in
 exactly one page — the page whose subject the marker describes.
 
+A marker is a strong signal that its subject is a distinct entity. If the
+fragment carries N markers for N different subjects, expect to write at
+least N pages — one per subject, each with that subject's prose AND its
+marker. Do not collapse multiple subjects into a single page.
+
 Rules (mandatory):
 - Copy each marker EXACTLY as it appears below: keep the brackets, the page
   number, the image number, and the description text byte-for-byte. Do not
@@ -406,9 +413,8 @@ Rules (mandatory):
 - A marker describing "Subject X" goes on the page about Subject X. Never on
   a neighbouring page about Subject Y.
 - Use every marker exactly once. Do not duplicate one across pages.
-- If you cannot identify which page a marker belongs to, place it on the page
-  that most directly names the same subject — never spread it across multiple
-  pages as a hedge.
+- The page carrying a marker must also carry the source's prose about that
+  subject — never produce a page that is "just the marker" with no body.
 
 Markers (verbatim):
 {markers_str}

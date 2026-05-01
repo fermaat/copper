@@ -22,6 +22,20 @@ template: |
   - Append new information at the end or add new subsections.
   - Never remove or overwrite existing content when updating.
 
+  ONE SUBJECT, ONE PAGE rule (critical):
+  - A source fragment frequently contains content for MULTIPLE distinct subjects
+    — e.g. a bestiary section with several creatures, a chapter introducing
+    several characters, a location entry covering several sub-locations.
+  - Every distinct subject with its own heading, stat block, narrative entry,
+    or visual marker MUST become its own wiki page. Do NOT merge two subjects
+    onto a single page just because they appeared next to each other.
+  - The full prose for each subject travels with that subject's page — never
+    drop the body text and keep only the visual marker. Each page must contain
+    the source text describing that subject, not just a one-line stub.
+  - Concretely: if the fragment has stat blocks or sections for "Subject A",
+    "Subject B", and "Subject C", you produce three pages (one per subject),
+    each with its own prose, citations, and marker.
+
   VISUAL MARKERS rule (critical):
   - Image markers have the exact shape `[Visual on page N, image M: <description>]`
     and appear inline within the source text. The UI uses them to render the image
