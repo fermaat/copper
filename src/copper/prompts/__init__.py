@@ -122,8 +122,11 @@ def _load_yaml_files(
             with open(yaml_file) as f:
                 data = yaml.safe_load(f) or {}
             name = data.get("name")
-            if not name:
-                logger.warning(f"[prompts] Skipping {yaml_file}: missing 'name' field.")
+            template = data.get("template")
+            if not name or template is None:
+                logger.warning(
+                    f"[prompts] Skipping {yaml_file}: missing 'name' or 'template' field."
+                )
                 continue
             if manager.get(name) is not None:
                 if allow_override:
@@ -132,7 +135,10 @@ def _load_yaml_files(
                 else:
                     logger.warning(f"[prompts] '{name}' already registered; skipping {yaml_file}.")
                     continue
-            manager.load_from_yaml(yaml_file)
+            # Register directly with the raw template — bridge's load_from_yaml() strips
+            # leading/trailing whitespace, which would destroy meaningful blank lines
+            # (e.g. spacing between conditional sections in store.user).
+            manager.register(name, template)
         except (ValueError, KeyError, OSError) as exc:
             logger.warning(f"[prompts] Failed to load {yaml_file}: {exc}")
 
