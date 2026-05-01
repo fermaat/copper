@@ -1,0 +1,16 @@
+name: assay.user
+description: |
+  User message template for the assay (retrieval) step. Presents the wiki index
+  and the question, asking the librarian to list relevant page slugs.
+  Variables: mind_name, index, question, max_pages.
+template: |
+  ## Wiki index for: $mind_name
+  $index
+
+  ## Question
+  $question
+
+  List the slugs of ALL pages that contain information relevant to answering this question.
+  One slug per line, prefixed with "PAGE: ". Include every page that could contribute
+  to a thorough answer — err on the side of including more rather than fewer.
+  Hard limit: $max_pages pages.

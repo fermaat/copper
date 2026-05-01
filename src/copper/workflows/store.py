@@ -396,66 +396,22 @@ def _build_store_prompt(
     images_section = ""
     if visual_markers:
         markers_str = "\n".join(f"  {m}" for m in visual_markers)
-        images_section = f"""
-## Images in this fragment ({len(visual_markers)} marker(s))
-Each marker below describes one image and MUST appear, copied verbatim, in
-exactly one page — the page whose subject the marker describes.
+        images_section = "\n" + render_prompt(
+            "store.images",
+            marker_count=len(visual_markers),
+            markers_str=markers_str,
+        ) + "\n"
 
-A marker is a strong signal that its subject is a distinct entity. If the
-fragment carries N markers for N different subjects, expect to write at
-least N pages — one per subject, each with that subject's prose AND its
-marker. Do not collapse multiple subjects into a single page.
-
-Rules (mandatory):
-- Copy each marker EXACTLY as it appears below: keep the brackets, the page
-  number, the image number, and the description text byte-for-byte. Do not
-  paraphrase or translate.
-- A marker describing "Subject X" goes on the page about Subject X. Never on
-  a neighbouring page about Subject Y.
-- Use every marker exactly once. Do not duplicate one across pages.
-- The page carrying a marker must also carry the source's prose about that
-  subject — never produce a page that is "just the marker" with no body.
-
-Markers (verbatim):
-{markers_str}
-
-"""
-
-    return f"""\
-## Coppermind schema
-{schema}
-
-## Current wiki index
-{index}
-{update_note}{images_section}## New source to store: {source_name}{chunk_note}
-{source_text}
-
----
-
-Process this source following the schema's storage workflow.
-Return the wiki updates in the following XML format:
-
-<wiki_updates>
-  <page slug="page-name" title="Page Title" action="create|update">
-    <content>
-    Full page content (without frontmatter — I add that myself).
-    </content>
-  </page>
-  ... (repeat for each page to create or update)
-  <index>
-    Full content of the new index.md
-  </index>
-</wiki_updates>
-
-Important rules:
-- Include between 1 and 5 pages (only the most relevant for this fragment).
-- Slug must be kebab-case and descriptive.
-- Add [[backlinks]] where appropriate.
-- Cite sources as [Source: {source_name}].
-- Mark contradictions when present.
-- LANGUAGE: write the wiki content in the SAME LANGUAGE as the source text
-  above. Do not translate.
-"""
+    return render_prompt(
+        "store.user",
+        schema=schema,
+        index=index,
+        update_note=update_note,
+        images_section=images_section,
+        source_name=source_name,
+        chunk_note=chunk_note,
+        source_text=source_text,
+    )
 
 
 def _send_with_retry(

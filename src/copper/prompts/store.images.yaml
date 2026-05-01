@@ -1,0 +1,27 @@
+name: store.images
+description: |
+  Block injected into the store user prompt when the source fragment contains
+  visual markers. Instructs the Archivist on verbatim marker placement rules.
+  Variables: marker_count, markers_str.
+template: |
+  ## Images in this fragment ($marker_count marker(s))
+  Each marker below describes one image and MUST appear, copied verbatim, in
+  exactly one page — the page whose subject the marker describes.
+
+  A marker is a strong signal that its subject is a distinct entity. If the
+  fragment carries N markers for N different subjects, expect to write at
+  least N pages — one per subject, each with that subject's prose AND its
+  marker. Do not collapse multiple subjects into a single page.
+
+  Rules (mandatory):
+  - Copy each marker EXACTLY as it appears below: keep the brackets, the page
+    number, the image number, and the description text byte-for-byte. Do not
+    paraphrase or translate.
+  - A marker describing "Subject X" goes on the page about Subject X. Never on
+    a neighbouring page about Subject Y.
+  - Use every marker exactly once. Do not duplicate one across pages.
+  - The page carrying a marker must also carry the source's prose about that
+    subject — never produce a page that is "just the marker" with no body.
+
+  Markers (verbatim):
+  $markers_str

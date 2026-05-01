@@ -1,0 +1,41 @@
+name: store.user
+description: |
+  User message template for the store workflow. Combines the coppermind schema,
+  current wiki index, source content, and optional context (chunk label, existing
+  page list, image markers) into the Archivist's task prompt.
+  Variables: schema, index, source_name, source_text, update_note, images_section, chunk_note.
+  The last three are pre-rendered conditional blocks (empty string when not applicable).
+template: |
+  ## Coppermind schema
+  $schema
+
+  ## Current wiki index
+  $index
+  $update_note$images_section## New source to store: $source_name$chunk_note
+  $source_text
+
+  ---
+
+  Process this source following the schema's storage workflow.
+  Return the wiki updates in the following XML format:
+
+  <wiki_updates>
+    <page slug="page-name" title="Page Title" action="create|update">
+      <content>
+      Full page content (without frontmatter — I add that myself).
+      </content>
+    </page>
+    ... (repeat for each page to create or update)
+    <index>
+      Full content of the new index.md
+    </index>
+  </wiki_updates>
+
+  Important rules:
+  - Include between 1 and 5 pages (only the most relevant for this fragment).
+  - Slug must be kebab-case and descriptive.
+  - Add [[backlinks]] where appropriate.
+  - Cite sources as [Source: $source_name].
+  - Mark contradictions when present.
+  - LANGUAGE: write the wiki content in the SAME LANGUAGE as the source text
+    above. Do not translate.

@@ -1,0 +1,14 @@
+name: tap.user
+description: |
+  User message template for the tap workflow (shared across all personalities).
+  Combines the retrieved wiki context and the user's question.
+  Variables: context, question, cross_mind_instructions.
+  cross_mind_instructions is a pre-rendered block (empty string for single-mind queries).
+template: |
+  ## Wiki content
+  $context
+  ---
+  ## Question
+  $question$cross_mind_instructions
+  Answer based solely on the wiki content above.
+  Cite the pages you use with [Source: page-name].

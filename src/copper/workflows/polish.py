@@ -13,16 +13,9 @@ from pathlib import Path
 from copper.core.coppermind import CopperMind
 from copper.core.wiki import WikiManager
 from copper.llm.base import LLMBase, Message
+from copper.prompts import render_prompt
 
-POLISH_SYSTEM = """\
-Eres el Archivista revisando la salud de una mentecobre.
-Inspeccionas el wiki en busca de:
-- 🔴 ERRORES: contradicciones directas entre páginas
-- 🟡 AVISOS: afirmaciones obsoletas, páginas huérfanas, referencias cruzadas ausentes
-- 🔵 INFO: mejoras sugeridas, gaps de conocimiento, artículos recomendados
-
-Produces un informe estructurado y accionable.
-"""
+_POLISH_SYSTEM_PROMPT = "polish.archivist"
 
 
 class PolishWorkflow:
@@ -38,7 +31,7 @@ class PolishWorkflow:
         prompt = _build_polish_prompt(self.mind.name, context)
 
         messages = [
-            Message(role="system", content=POLISH_SYSTEM),
+            Message(role="system", content=render_prompt(_POLISH_SYSTEM_PROMPT)),
             Message(role="user", content=prompt),
         ]
         response = self.llm.complete(messages)
@@ -79,22 +72,7 @@ def _build_polish_context(wiki: WikiManager) -> str:
 
 
 def _build_polish_prompt(mind_name: str, context: str) -> str:
-    return f"""\
-## Wiki de la mentecobre: {mind_name}
-
-{context}
-
----
-
-Realiza una revisión completa de salud del wiki anterior.
-Estructura el informe con:
-
-1. **Resumen ejecutivo** (2-3 líneas)
-2. **🔴 Errores** (contradicciones, inconsistencias graves)
-3. **🟡 Avisos** (páginas huérfanas, afirmaciones sin citar, referencias rotas)
-4. **🔵 Info** (gaps de conocimiento, 3 artículos recomendados para rellenar huecos)
-5. **Acciones sugeridas** (lista priorizada)
-"""
+    return render_prompt("polish.user", mind_name=mind_name, context=context)
 
 
 def _structural_checks(wiki: WikiManager) -> list[str]:

@@ -45,18 +45,13 @@ class LLMRetriever:
     def _select_pages(
         self, index: str, mind_name: str, question: str
     ) -> tuple[list[str], int, float]:
-        prompt = f"""\
-## Wiki index for: {mind_name}
-{index}
-
-## Question
-{question}
-
-List the slugs of ALL pages that contain information relevant to answering this question.
-One slug per line, prefixed with "PAGE: ". Include every page that could contribute
-to a thorough answer — err on the side of including more rather than fewer.
-Hard limit: {self.max_pages} pages.
-"""
+        prompt = render_prompt(
+            "assay.user",
+            mind_name=mind_name,
+            index=index,
+            question=question,
+            max_pages=self.max_pages,
+        )
         messages = [
             Message(role="system", content=render_prompt(_SELECT_SYSTEM_PROMPT)),
             Message(role="user", content=prompt),

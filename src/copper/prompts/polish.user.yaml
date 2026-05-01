@@ -1,0 +1,20 @@
+name: polish.user
+description: |
+  User message template for the polish workflow. Passes the full wiki content
+  and requests a structured health report from the Archivist.
+  Variables: mind_name, context.
+template: |
+  ## Wiki de la mentecobre: $mind_name
+
+  $context
+
+  ---
+
+  Realiza una revisión completa de salud del wiki anterior.
+  Estructura el informe con:
+
+  1. **Resumen ejecutivo** (2-3 líneas)
+  2. **🔴 Errores** (contradicciones, inconsistencias graves)
+  3. **🟡 Avisos** (páginas huérfanas, afirmaciones sin citar, referencias rotas)
+  4. **🔵 Info** (gaps de conocimiento, 3 artículos recomendados para rellenar huecos)
+  5. **Acciones sugeridas** (lista priorizada)

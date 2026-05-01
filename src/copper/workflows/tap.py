@@ -183,16 +183,12 @@ def _build_tap_prompt(context: str, question: str, multi: bool = False) -> str:
         if multi
         else ""
     )
-
-    return f"""\
-## Wiki content
-{context}
----
-## Question
-{question}{cross_mind_instructions}
-Answer based solely on the wiki content above.
-Cite the pages you use with [Source: page-name].
-"""
+    return render_prompt(
+        "tap.user",
+        context=context,
+        question=question,
+        cross_mind_instructions=cross_mind_instructions,
+    )
 
 
 def _extract_connections(text: str) -> list[str]:
