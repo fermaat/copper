@@ -121,6 +121,16 @@ class CopperMind:
         return self.wiki_dir / "log.md"
 
     @property
+    def meta_summary_path(self) -> Path:
+        return self.wiki_dir / "_meta.md"
+
+    @property
+    def meta_summary(self) -> str:
+        if not self.meta_summary_path.exists():
+            return ""
+        return self.meta_summary_path.read_text()
+
+    @property
     def config(self) -> CopperMindConfig:
         if self._config is None:
             self._config = self._load_config()
@@ -216,6 +226,45 @@ class CopperMind:
                 minds.append(linked)
         return minds
 
+    # ------------------------------------------------------------------ #
+    # Tree navigation                                                      #
+    # ------------------------------------------------------------------ #
+
+    @property
+    def parent(self) -> "CopperMind | None":
+        # A child lives at <parent_path>/children/<name>
+        if self.path.parent.name == "children":
+            candidate = CopperMind(self.path.parent.parent)
+            if candidate.exists():
+                return candidate
+        return None
+
+    @property
+    def is_root(self) -> bool:
+        return self.parent is None
+
+    def children(self) -> list["CopperMind"]:
+        children_dir = self.path / "children"
+        if not children_dir.exists():
+            return []
+        return [
+            CopperMind(p)
+            for p in sorted(children_dir.iterdir())
+            if p.is_dir() and (p / ".copper" / "config.yaml").exists()
+        ]
+
+    def descendants(self) -> list["CopperMind"]:
+        result = []
+        for child in self.children():
+            result.append(child)
+            result.extend(child.descendants())
+        return result
+
+    def forge_child(self, name: str, topic: str, model: str = "default") -> "CopperMind":
+        children_dir = self.path / "children"
+        children_dir.mkdir(exist_ok=True)
+        return CopperMind._forge_at(children_dir / name, name, topic, model)
+
     def append_log(self, action: str, description: str) -> None:
         date = datetime.now().strftime("%Y-%m-%d")
         entry = f"\n## [{date}] {action} | {description}\n"
@@ -251,9 +300,26 @@ class CopperMind:
         return mind
 
     @classmethod
-    def forge(cls, name: str, topic: str, model: str = "default") -> "CopperMind":
-        """Create a new mentecobre (forge it from copper)."""
-        mind = cls(MINDS_DIR / name)
+    def forge(
+        cls,
+        name: str,
+        topic: str,
+        model: str = "default",
+        parent: "CopperMind | None" = None,
+    ) -> "CopperMind":
+        """Create a new mentecobre (forge it from copper).
+
+        If *parent* is given, the mind is placed under parent's children/.
+        """
+        if parent is not None:
+            children_dir = parent.path / "children"
+            children_dir.mkdir(exist_ok=True)
+            return cls._forge_at(children_dir / name, name, topic, model)
+        return cls._forge_at(MINDS_DIR / name, name, topic, model)
+
+    @classmethod
+    def _forge_at(cls, path: Path, name: str, topic: str, model: str = "default") -> "CopperMind":
+        mind = cls(path)
         if mind.exists():
             raise FileExistsError(f"Ya existe una mentecobre llamada '{name}'.")
 

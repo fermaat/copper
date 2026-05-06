@@ -113,3 +113,104 @@ def test_stats(tmp_minds_dir):
     assert stats["topic"] == "mi tema"
     assert stats["raw_sources"] == 0
     assert stats["wiki_pages"] == 0
+
+
+# ------------------------------------------------------------------ #
+# Tree navigation — Phase 1                                           #
+# ------------------------------------------------------------------ #
+
+
+def test_flat_mind_has_no_children(tmp_minds_dir):
+    from copper.core.coppermind import CopperMind
+
+    mind = CopperMind.forge("flat", "tema plano")
+
+    assert mind.children() == []
+    assert mind.is_root is True
+    assert mind.parent is None
+
+
+def test_forge_child_creates_structure(tmp_minds_dir):
+    from copper.core.coppermind import CopperMind
+
+    parent = CopperMind.forge("aventura", "aventura principal")
+    child = parent.forge_child("fase-1", "primera fase")
+
+    # Child directories exist
+    assert child.path.exists()
+    assert child.raw_dir.exists()
+    assert child.wiki_dir.exists()
+    assert child.config_path.exists()
+
+    # Parent discovers child
+    children = parent.children()
+    assert len(children) == 1
+    assert children[0].name == "fase-1"
+
+    # Child navigates back to parent
+    assert child.parent is not None
+    assert child.parent.name == "aventura"
+    assert child.is_root is False
+
+
+def test_forge_child_via_forge_parent_kwarg(tmp_minds_dir):
+    from copper.core.coppermind import CopperMind
+
+    parent = CopperMind.forge("mod", "módulo")
+    child = CopperMind.forge("sub", "sub-módulo", parent=parent)
+
+    assert len(parent.children()) == 1
+    assert child.parent.name == "mod"
+
+
+def test_three_level_tree(tmp_minds_dir):
+    from copper.core.coppermind import CopperMind
+
+    root = CopperMind.forge("root", "raíz")
+    child = root.forge_child("child", "hijo")
+    grandchild = child.forge_child("grandchild", "nieto")
+
+    # Navigation down
+    assert len(root.children()) == 1
+    assert len(child.children()) == 1
+    assert len(grandchild.children()) == 0
+
+    # descendants() is recursive
+    desc = root.descendants()
+    assert len(desc) == 2
+    assert {d.name for d in desc} == {"child", "grandchild"}
+
+    # Navigation up
+    assert grandchild.parent.name == "child"
+    assert grandchild.parent.parent.name == "root"
+    assert root.is_root is True
+    assert child.is_root is False
+    assert grandchild.is_root is False
+
+
+def test_meta_summary_missing_returns_empty(tmp_minds_dir):
+    from copper.core.coppermind import CopperMind
+
+    mind = CopperMind.forge("meta-test", "tema")
+
+    assert not mind.meta_summary_path.exists()
+    assert mind.meta_summary == ""
+
+
+def test_meta_summary_reads_file_when_present(tmp_minds_dir):
+    from copper.core.coppermind import CopperMind
+
+    mind = CopperMind.forge("meta-test", "tema")
+    mind.meta_summary_path.write_text("Resumen de la mente.")
+
+    assert mind.meta_summary == "Resumen de la mente."
+
+
+def test_forge_child_duplicate_raises(tmp_minds_dir):
+    from copper.core.coppermind import CopperMind
+
+    parent = CopperMind.forge("padre", "tema")
+    parent.forge_child("hijo", "subtema")
+
+    with pytest.raises(FileExistsError):
+        parent.forge_child("hijo", "otro subtema")
