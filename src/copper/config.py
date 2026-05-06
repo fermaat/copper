@@ -84,6 +84,9 @@ class Settings(CoreSettings):
     # Tap: default personality (prompt name) when none is specified per-mind
     # or per-request. Must exist in the registered prompts.
     copper_tap_personality: str = "tap.archivist"
+    # Tap: maximum depth for recursive scanner descent in hierarchical copperminds.
+    # At depth == copper_tap_max_depth the mind is treated as a leaf (retriever used).
+    copper_tap_max_depth: int = 2
 
     # ── Prompts ─────────────────────────────────────────────────────
     # Optional directory with user-defined YAML prompt files that override

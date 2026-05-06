@@ -205,6 +205,132 @@ class TestTapWorkflow:
 
 
 # ------------------------------------------------------------------ #
+# Hierarchical Tap — Phase 2                                          #
+# ------------------------------------------------------------------ #
+
+
+class TestHierarchicalTap:
+    """Scanner-guided two-stage tap on hierarchical copperminds."""
+
+    def _make_tree(self, tmp_minds_dir, children: list[str] | None = None):
+        """Return (parent, {child_name: child}) with simple wiki pages."""
+        from copper.core.coppermind import CopperMind
+        from copper.core.wiki import WikiManager
+
+        parent = CopperMind.forge("aventura", "adventure module")
+        WikiManager(parent.wiki_dir).create_page(
+            "overview", "Overview", "General adventure overview. [Fuente: overview]"
+        )
+
+        child_map = {}
+        for name in (children or []):
+            child = parent.forge_child(name, f"topic for {name}")
+            WikiManager(child.wiki_dir).create_page(
+                f"pagina-{name}", f"Page {name}", f"Content of {name}. [Fuente: src]"
+            )
+            child_map[name] = child
+
+        return parent, child_map
+
+    def test_flat_mind_scanner_not_invoked(self, tmp_minds_dir):
+        from copper.core.coppermind import CopperMind
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        mind = CopperMind.forge("plana", "flat mind")
+        llm = MockLLM(["PAGE: overview", "Respuesta plana."])
+        workflow = TapWorkflow([mind], llm)
+        result = workflow.run("¿pregunta?")
+
+        assert result.answer == "Respuesta plana."
+        # flat path: 1 retriever call + 1 answer = 2
+        assert llm._call_count == 2
+
+    def test_hierarchical_scanner_picks_one_child(self, tmp_minds_dir):
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        parent, children = self._make_tree(tmp_minds_dir, ["fase-1", "fase-2"])
+        llm = MockLLM([
+            "<descend>\nfase-1\n</descend>",  # scanner → pick fase-1
+            "PAGE: pagina-fase-1",            # retriever on fase-1
+            "Respuesta sobre fase-1.",        # final answer
+        ])
+        workflow = TapWorkflow([parent], llm)
+        result = workflow.run("¿qué pasa en la fase 1?")
+
+        assert result.answer == "Respuesta sobre fase-1."
+        # 1 scanner + 1 retriever on fase-1 + 1 answer
+        assert llm._call_count == 3
+        # Context in the answer call includes the child's page
+        answer_call_user = llm.calls[-1][-1].content
+        assert "fase-1" in answer_call_user
+
+    def test_hierarchical_scanner_picks_two_children(self, tmp_minds_dir):
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        parent, _ = self._make_tree(tmp_minds_dir, ["fase-1", "fase-2"])
+        llm = MockLLM([
+            "<descend>\nfase-1\nfase-2\n</descend>",  # scanner → both
+            "PAGE: pagina-fase-1",                     # retriever on fase-1
+            "PAGE: pagina-fase-2",                     # retriever on fase-2
+            "Respuesta que abarca ambas fases.",        # final answer
+        ])
+        workflow = TapWorkflow([parent], llm)
+        result = workflow.run("¿resumen de todas las fases?")
+
+        assert result.answer == "Respuesta que abarca ambas fases."
+        # 1 scanner + 2 retrievers + 1 answer
+        assert llm._call_count == 4
+
+    def test_hierarchical_scanner_parent_only(self, tmp_minds_dir):
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        parent, _ = self._make_tree(tmp_minds_dir, ["fase-1"])
+        llm = MockLLM([
+            "<descend>\n</descend>",  # scanner → parent only
+            "Respuesta solo del padre.",
+        ])
+        workflow = TapWorkflow([parent], llm)
+        result = workflow.run("¿pregunta general?")
+
+        assert result.answer == "Respuesta solo del padre."
+        # 1 scanner + 0 retrievers + 1 answer
+        assert llm._call_count == 2
+        # No child pages in context
+        answer_call_user = llm.calls[-1][-1].content
+        assert "fase-1" not in answer_call_user
+
+    def test_hierarchical_three_level_nested_scan(self, tmp_minds_dir):
+        from copper.core.coppermind import CopperMind
+        from copper.core.wiki import WikiManager
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        root = CopperMind.forge("root", "root topic")
+        child = root.forge_child("child", "child topic")
+        grandchild = child.forge_child("grandchild", "grandchild topic")
+        WikiManager(grandchild.wiki_dir).create_page(
+            "deep-page", "Deep Page", "Deep content. [Fuente: deep]"
+        )
+
+        llm = MockLLM([
+            "<descend>\nchild\n</descend>",       # scanner on root
+            "<descend>\ngrandchild\n</descend>",  # scanner on child
+            "PAGE: deep-page",                    # retriever on grandchild
+            "Respuesta profunda.",                # final answer
+        ])
+        workflow = TapWorkflow([root], llm)
+        result = workflow.run("¿contenido profundo?")
+
+        assert result.answer == "Respuesta profunda."
+        # 2 scanners + 1 retriever + 1 answer
+        assert llm._call_count == 4
+
+
+# ------------------------------------------------------------------ #
 # Polish                                                              #
 # ------------------------------------------------------------------ #
 
