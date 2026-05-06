@@ -206,6 +206,27 @@ def test_meta_summary_reads_file_when_present(tmp_minds_dir):
     assert mind.meta_summary == "Resumen de la mente."
 
 
+def test_format_tree(tmp_minds_dir):
+    from copper.core.coppermind import CopperMind
+
+    root = CopperMind.forge("root", "raíz")
+    child1 = root.forge_child("hijo-1", "tema 1")
+    root.forge_child("hijo-2", "tema 2")
+    child1.forge_child("nieto", "tema nieto")
+    child1.meta_summary_path.write_text("Resumen del hijo 1.")
+
+    tree = root.format_tree()
+
+    assert "root/" in tree
+    assert "hijo-1/" in tree
+    assert "hijo-2/" in tree
+    assert "nieto/" in tree
+    # hijo-1 appears before nieto (parent before children within a branch)
+    assert tree.index("hijo-1/") < tree.index("nieto/")
+    # meta summary is shown
+    assert "Resumen del hijo 1." in tree
+
+
 def test_forge_child_duplicate_raises(tmp_minds_dir):
     from copper.core.coppermind import CopperMind
 

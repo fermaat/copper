@@ -1,0 +1,34 @@
+name: store.router
+description: |
+  User template for the store routing pass. Given a parent coppermind's topic,
+  its children with meta-summaries, and a preview of the new content, decide
+  where the content belongs.
+  Variables: parent_topic, children_list, content_preview.
+template: |
+  ## Mentecobre destino (tema: $parent_topic)
+
+  ## Sub-mentecobrés disponibles
+  $children_list
+
+  ## Contenido a almacenar (vista previa)
+  $content_preview
+
+  ---
+
+  Decide dónde debe almacenarse este contenido. Las opciones son:
+
+  1. En la mentecobre padre (contenido transversal, personajes, contexto general).
+  2. En una sub-mentecobre existente (si el contenido pertenece claramente a ese ámbito).
+  3. En una nueva sub-mentecobre (si el contenido abre un nuevo ámbito bien definido).
+
+  Responde ÚNICAMENTE con este bloque XML:
+
+  Para almacenar en el padre:
+  <route>parent</route>
+
+  Para almacenar en una sub-mentecobre existente:
+  <route>nombre-exacto-del-hijo</route>
+
+  Para crear una nueva sub-mentecobre:
+  <route>new_child:nombre-propuesto</route>
+  <topic>Descripción breve del tema de la nueva sub-mentecobre</topic>

@@ -260,6 +260,18 @@ class CopperMind:
             result.extend(child.descendants())
         return result
 
+    def format_tree(self) -> str:
+        """Return an ASCII tree of this mind and all its descendants.
+
+        Example output:
+            aventura/  (2 páginas)
+              ├── fase-1/  (3 páginas)  _meta: "Fase 1: convocatoria..."
+              └── fase-2/  (0 páginas)
+        """
+        lines: list[str] = []
+        _tree_lines(self, lines, prefix="", is_last=True, is_root=True)
+        return "\n".join(lines)
+
     def forge_child(self, name: str, topic: str, model: str = "default") -> "CopperMind":
         children_dir = self.path / "children"
         children_dir.mkdir(exist_ok=True)
@@ -374,6 +386,25 @@ class CopperMind:
                 raise ValueError("No hay mentecobres. Crea una con `copper forge`.")
             return minds
         return [cls.get(n.strip()) for n in names.split(",")]
+
+
+def _tree_lines(
+    mind: "CopperMind",
+    lines: list[str],
+    prefix: str,
+    is_last: bool,
+    is_root: bool,
+) -> None:
+    pages = len(mind.wiki_pages())
+    page_label = f"{pages} página{'s' if pages != 1 else ''}"
+    meta = f'  _meta: "{mind.meta_summary[:55]}"' if mind.meta_summary else ""
+    connector = "" if is_root else ("└── " if is_last else "├── ")
+    lines.append(f"{prefix}{connector}{mind.name}/  ({page_label}){meta}")
+
+    children = mind.children()
+    child_prefix = "  " if is_root else prefix + ("    " if is_last else "│   ")
+    for i, child in enumerate(children):
+        _tree_lines(child, lines, child_prefix, i == len(children) - 1, False)
 
 
 def _default_schema(name: str, topic: str) -> str:

@@ -53,13 +53,7 @@ def test_phase1_tree_navigation(tmp_minds_dir):
         "Fase 2: el bosque entre las ciudades está maldito y debe ser cruzado."
     )
 
-    print(f"{aventura.name}/  (is_root={aventura.is_root})")
-    for child in aventura.children():
-        print(f"  └── {child.name}/  (parent → '{child.parent.name}')")
-        print(f"        _meta: \"{child.meta_summary[:60]}\"")
-        for gc in child.children():
-            print(f"        └── {gc.name}/  (parent → '{gc.parent.name}')")
-
+    print(aventura.format_tree())
     all_desc = [d.name for d in aventura.descendants()]
     print(f"\naventura.descendants() → {all_desc}")
     print(f"enc.parent.parent.name  → '{enc.parent.parent.name}'")
@@ -114,13 +108,7 @@ def test_phase2_hierarchical_tap(tmp_minds_dir):
         "The cursed forest lies between the two cities. [Fuente: module]",
     )
 
-    print("Árbol:")
-    print(f"  {aventura.name}/  wiki/overview.md")
-    for child in aventura.children():
-        pages = [p.stem for p in child.wiki_dir.glob("*.md")
-                 if p.name not in ("index.md", "log.md", "_meta.md")]
-        print(f"    └── {child.name}/  wiki/{pages}")
-        print(f"          _meta: \"{child.meta_summary}\"")
+    print(aventura.format_tree())
 
     # --- Query 1: scanner routes to fase-1 ---
     q1 = "¿Qué deben hacer los héroes en la fase 1?"
@@ -198,9 +186,7 @@ def test_phase3_recursive_polish(tmp_minds_dir):
     )
 
     print("Árbol antes del polish:")
-    print(f"  {aventura.name}/  _meta existe: {aventura.meta_summary_path.exists()}")
-    for child in aventura.children():
-        print(f"    └── {child.name}/  _meta existe: {child.meta_summary_path.exists()}")
+    print(aventura.format_tree())
 
     # Even calls = archivist lint report, odd calls = _meta summary
     llm = MockLLM([
@@ -211,17 +197,7 @@ def test_phase3_recursive_polish(tmp_minds_dir):
     result = PolishWorkflow(aventura, llm).run()
 
     print("\nDespués del polish:")
-    for child in aventura.children():
-        lint = list(child.wiki_dir.glob("lint-report-*.md"))
-        print(f"  {child.name}/")
-        print(f"    lint-report: {'✓' if lint else '✗'}")
-        print(f"    _meta.md:    {'✓' if child.meta_summary_path.exists() else '✗'}"
-              f"  → \"{child.meta_summary[:55]}\"")
-    lint_parent = list(aventura.wiki_dir.glob("lint-report-*.md"))
-    print(f"  {aventura.name}/")
-    print(f"    lint-report: {'✓' if lint_parent else '✗'}")
-    print(f"    _meta.md:    {'✓' if aventura.meta_summary_path.exists() else '✗'}"
-          f"  → \"{aventura.meta_summary[:55]}\"")
+    print(aventura.format_tree())
 
     print(f"\n[Calls total]: {llm._call_count}  (3 mentes × 2 llamadas cada una)")
     print(f"[children en result]: {[r.mind_name for r in result.children_results]}")
@@ -237,3 +213,97 @@ def test_phase3_recursive_polish(tmp_minds_dir):
     assert llm._call_count == 6
 
     print("\n✓ Bottom-up: hijos primero, _meta.md fresco en todos los nodos")
+
+
+# ------------------------------------------------------------------ #
+# Phase 4 — Store with routing                                       #
+# ------------------------------------------------------------------ #
+
+
+def test_phase4_store_routing(tmp_minds_dir, tmp_path):
+    """
+    Storing content in a hierarchical coppermind first asks a router LLM
+    where the content belongs. Content lands in the right child (or back at
+    the parent for cross-cutting material), and a new child can be forged
+    on the fly if the router decides so.
+    """
+    from copper.core.coppermind import CopperMind
+    from copper.llm.mock import MockLLM
+    from copper.workflows.store import StoreWorkflow
+
+    def wiki_xml(slug):
+        return (
+            "<wiki_updates>"
+            f'<page slug="{slug}" title="{slug.title()}" action="create">'
+            f"<content>Contenido sobre {slug}. [Fuente: src]</content>"
+            "</page>"
+            f"<index># Índice\n\n- [[{slug}]]</index>"
+            "</wiki_updates>"
+        )
+
+    print("\n=== Phase 4 — Store con enrutamiento ===\n")
+
+    aventura = CopperMind.forge("aventura", "adventure module")
+    fase1 = aventura.forge_child("fase-1", "La Convocatoria")
+    fase1.meta_summary_path.write_text("Fase 1: convocatoria y viaje a Luthadel.")
+    fase2 = aventura.forge_child("fase-2", "El Bosque")
+    fase2.meta_summary_path.write_text("Fase 2: cruce del bosque maldito.")
+
+    print("Árbol inicial:")
+    print(aventura.format_tree())
+
+    # --- Source 1: router picks fase-1 ---
+    src1 = tmp_path / "convocatoria.md"
+    src1.write_text("# La Convocatoria\n\nEl rey convoca a los héroes a Luthadel.\n")
+
+    llm1 = MockLLM(["<route>fase-1</route>", wiki_xml("convocatoria")])
+    result1 = StoreWorkflow(aventura, llm1).run(src1)
+
+    print(f"\nFuente 1: '{src1.name}'")
+    print(f"  [Router] → '{result1.routed_to}'")
+    print(f"  [Calls]  {llm1._call_count}  (router + archivist)")
+    print(f"  [Páginas escritas] {result1.pages_written} en '{result1.routed_to}'")
+
+    assert result1.routed_to == "fase-1"
+    assert llm1._call_count == 2
+    assert len(fase1.wiki_pages()) > 0
+    assert len(aventura.wiki_pages()) == 0
+
+    # --- Source 2: router says parent (cross-cutting content) ---
+    src2 = tmp_path / "personajes.md"
+    src2.write_text("# Personajes\n\nVin, Elend y Sazed aparecen en todas las fases.\n")
+
+    llm2 = MockLLM(["<route>parent</route>", wiki_xml("personajes")])
+    result2 = StoreWorkflow(aventura, llm2).run(src2)
+
+    print(f"\nFuente 2: '{src2.name}'")
+    print(f"  [Router] → '{result2.routed_to or 'padre (contenido transversal)'}'")
+    print(f"  [Calls]  {llm2._call_count}")
+    print(f"  [Páginas escritas] {result2.pages_written} en 'aventura'")
+
+    assert result2.routed_to is None
+    assert llm2._call_count == 2
+    assert len(aventura.wiki_pages()) > 0
+
+    # --- Source 3: router proposes a new child ---
+    src3 = tmp_path / "epilogo.md"
+    src3.write_text("# Epílogo\n\nTras derrotar al Lord Ruler, los héroes reconstruyen el Imperio.\n")
+
+    llm3 = MockLLM([
+        "<route>new_child:epilogo</route>\n<topic>Epílogo y reconstrucción del Imperio</topic>",
+        wiki_xml("epilogo"),
+    ])
+    result3 = StoreWorkflow(aventura, llm3).run(src3)
+
+    print(f"\nFuente 3: '{src3.name}'")
+    print(f"  [Router] → nuevo hijo '{result3.routed_to}' (forjado en el momento)")
+    print(f"  [Calls]  {llm3._call_count}")
+    child_names = {c.name for c in aventura.children()}
+    print("  [Hijos ahora]")
+    print(aventura.format_tree())
+
+    assert result3.routed_to == "epilogo"
+    assert llm3._call_count == 2
+    assert "epilogo" in child_names
+
+    print("\n✓ Enrutamiento a hijo, a padre y creación de hijo nuevo — todos OK")

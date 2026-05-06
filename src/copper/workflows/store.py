@@ -55,6 +55,10 @@ _MARKER_STOPWORDS = frozenset({"keywords", "tags", "visual", "image", "page", "p
 # Loaded lazily via render_prompt() inside the workflow so a missing YAML
 # surfaces early with a clear error, rather than at module import time.
 _STORE_SYSTEM_PROMPT = "store.archivist"
+_STORE_ROUTER_PROMPT = "store.router"
+
+# Max chars of source content sent to the router as a preview.
+_ROUTER_PREVIEW_CHARS = 2_000
 
 
 class StoreWorkflow:
@@ -71,9 +75,101 @@ class StoreWorkflow:
         self.image_describer = image_describer
         self.wiki = WikiManager(mind.wiki_dir)
 
-    def run(self, source_path: Path) -> StoreResult:
+    def _route(
+        self, source_path: Path
+    ) -> tuple["CopperMind", str | None, int, float]:
+        """Call the router LLM and resolve the destination mind.
+
+        Returns (target_mind, routed_to_name, tokens_used, cost_usd).
+        routed_to_name is None when the decision is to keep at parent level.
+        """
+        children = self.mind.children()
+        children_block = "\n".join(
+            f"- {c.name}: {c.meta_summary or '(sin resumen)'}" for c in children
+        )
+        try:
+            content_preview = source_path.read_text(errors="replace")[:_ROUTER_PREVIEW_CHARS]
+        except Exception:
+            content_preview = source_path.name
+
+        user_content = render_prompt(
+            _STORE_ROUTER_PROMPT,
+            parent_topic=self.mind.config.topic,
+            children_list=children_block,
+            content_preview=content_preview,
+        )
+        messages = [
+            Message(role="system", content=render_prompt(_STORE_SYSTEM_PROMPT)),
+            Message(role="user", content=user_content),
+        ]
+        logger.info(
+            f"[store] Routing '{source_path.name}' across "
+            f"{len(children)} sub-copperminds..."
+        )
+        response = self.llm.complete(messages)
+        target_str, new_child_topic = _parse_router_response(response.text)
+        logger.info(f"[store] Router decision: '{target_str}'")
+
+        if target_str == "parent":
+            return self.mind, None, response.tokens_used, response.cost_usd
+
+        if target_str.startswith("new_child:"):
+            child_name = target_str[len("new_child:"):]
+            topic = new_child_topic or f"Sub-topic of {self.mind.config.topic}"
+            logger.info(
+                f"[store] Forjando nueva sub-mentecobre '{child_name}' (tema: {topic})..."
+            )
+            new_child = self.mind.forge_child(child_name, topic)
+            return new_child, child_name, response.tokens_used, response.cost_usd
+
+        child_map = {c.name: c for c in children}
+        child = child_map.get(target_str)
+        if child is None:
+            logger.warning(
+                f"[store] Router returned unknown child '{target_str}', "
+                "falling back to parent"
+            )
+            return self.mind, None, response.tokens_used, response.cost_usd
+
+        return child, target_str, response.tokens_used, response.cost_usd
+
+    def run(
+        self,
+        source_path: Path,
+        no_route: bool = False,
+        into: str | None = None,
+    ) -> StoreResult:
         if not source_path.exists():
             raise FileNotFoundError(f"Fuente no encontrada: {source_path}")
+
+        # --- Routing pass (before touching raw/) ---
+        router_tokens = 0
+        router_cost = 0.0
+        target_mind = self.mind
+        routed_to: str | None = None
+
+        if into is not None:
+            child_map = {c.name: c for c in self.mind.children()}
+            child = child_map.get(into)
+            if child is None:
+                raise ValueError(
+                    f"Sub-mentecobre '{into}' no encontrada en '{self.mind.name}'."
+                )
+            target_mind = child
+            routed_to = child.name
+        elif not no_route and self.mind.children():
+            target_mind, routed_to, router_tokens, router_cost = self._route(source_path)
+
+        if target_mind is not self.mind:
+            child_wf = StoreWorkflow(target_mind, self.llm, self.image_describer)
+            child_result = child_wf.run(source_path, no_route=True)
+            return StoreResult(
+                source=child_result.source,
+                pages_written=child_result.pages_written,
+                tokens_used=child_result.tokens_used + router_tokens,
+                cost_usd=child_result.cost_usd + router_cost,
+                routed_to=routed_to,
+            )
 
         # Copy to raw/ if not already there
         raw_path = self.mind.raw_dir / source_path.name
@@ -518,14 +614,38 @@ def _apply_wiki_updates(llm_output: str, source_name: str, wiki: WikiManager) ->
     return pages_written
 
 
+def _parse_router_response(text: str) -> tuple[str, str]:
+    """Parse router output. Returns (target, new_child_topic).
+
+    target is one of: 'parent', a child name, or 'new_child:<name>'.
+    new_child_topic is only populated when target starts with 'new_child:'.
+    Falls back to 'parent' on malformed output.
+    """
+    route_match = re.search(r"<route>(.*?)</route>", text, re.DOTALL)
+    topic_match = re.search(r"<topic>(.*?)</topic>", text, re.DOTALL)
+    target = route_match.group(1).strip() if route_match else "parent"
+    topic = topic_match.group(1).strip() if topic_match else ""
+    return target, topic
+
+
 class StoreResult:
     def __init__(
-        self, source: str, pages_written: list[str], tokens_used: int, cost_usd: float = 0.0
+        self,
+        source: str,
+        pages_written: list[str],
+        tokens_used: int,
+        cost_usd: float = 0.0,
+        routed_to: str | None = None,
     ):
         self.source = source
         self.pages_written = pages_written
         self.tokens_used = tokens_used
         self.cost_usd = cost_usd
+        self.routed_to = routed_to
 
     def __repr__(self) -> str:
-        return f"StoreResult(source={self.source!r}, pages={len(self.pages_written)}, tokens={self.tokens_used}, cost=${self.cost_usd:.6f})"
+        routed = f", routed_to={self.routed_to!r}" if self.routed_to else ""
+        return (
+            f"StoreResult(source={self.source!r}, pages={len(self.pages_written)}, "
+            f"tokens={self.tokens_used}, cost=${self.cost_usd:.6f}{routed})"
+        )

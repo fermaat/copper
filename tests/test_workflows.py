@@ -110,6 +110,121 @@ class TestStoreWorkflow:
 
 
 # ------------------------------------------------------------------ #
+# Routed Store — Phase 4                                             #
+# ------------------------------------------------------------------ #
+
+
+class TestRoutedStore:
+    """Router decides where new content lands in a hierarchical coppermind."""
+
+    def _wiki_xml(self, slug="resumen", title="Resumen"):
+        return (
+            "<wiki_updates>"
+            f'<page slug="{slug}" title="{title}" action="create">'
+            f"<content>Contenido de {slug}. [Fuente: src]</content>"
+            "</page>"
+            f"<index># Índice\n\n- [[{slug}]]</index>"
+            "</wiki_updates>"
+        )
+
+    def test_store_flat_router_not_invoked(self, mind, source_file):
+        from copper.workflows.store import StoreWorkflow
+        from copper.llm.mock import MockLLM
+
+        llm = MockLLM([self._wiki_xml()])
+        result = StoreWorkflow(mind, llm).run(source_file)
+
+        assert result.routed_to is None
+        assert llm._call_count == 1  # archivist only — no router
+
+    def test_store_routes_to_child(self, tmp_minds_dir, source_file):
+        from copper.core.coppermind import CopperMind
+        from copper.workflows.store import StoreWorkflow
+        from copper.llm.mock import MockLLM
+
+        parent = CopperMind.forge("padre", "adventure")
+        parent.forge_child("fase-1", "first phase")
+
+        llm = MockLLM([
+            "<route>fase-1</route>",   # router → fase-1
+            self._wiki_xml(),          # archivist in fase-1
+        ])
+        result = StoreWorkflow(parent, llm).run(source_file)
+
+        assert result.routed_to == "fase-1"
+        assert llm._call_count == 2
+        # Page landed in the child's wiki, not the parent's
+        child = parent.children()[0]
+        assert len(child.wiki_pages()) > 0
+        assert len(parent.wiki_pages()) == 0
+
+    def test_store_routes_to_parent(self, tmp_minds_dir, source_file):
+        from copper.core.coppermind import CopperMind
+        from copper.workflows.store import StoreWorkflow
+        from copper.llm.mock import MockLLM
+
+        parent = CopperMind.forge("padre", "adventure")
+        parent.forge_child("fase-1", "first phase")
+
+        llm = MockLLM([
+            "<route>parent</route>",  # router → stay at parent
+            self._wiki_xml(),
+        ])
+        result = StoreWorkflow(parent, llm).run(source_file)
+
+        assert result.routed_to is None
+        assert llm._call_count == 2
+        assert len(parent.wiki_pages()) > 0
+
+    def test_store_router_creates_new_child(self, tmp_minds_dir, source_file):
+        from copper.core.coppermind import CopperMind
+        from copper.workflows.store import StoreWorkflow
+        from copper.llm.mock import MockLLM
+
+        parent = CopperMind.forge("padre", "adventure")
+        parent.forge_child("fase-1", "first phase")
+
+        llm = MockLLM([
+            "<route>new_child:fase-2</route>\n<topic>Segunda fase del módulo</topic>",
+            self._wiki_xml(),
+        ])
+        result = StoreWorkflow(parent, llm).run(source_file)
+
+        assert result.routed_to == "fase-2"
+        assert llm._call_count == 2
+        child_names = {c.name for c in parent.children()}
+        assert "fase-2" in child_names
+
+    def test_store_no_route_flag_skips_router(self, tmp_minds_dir, source_file):
+        from copper.core.coppermind import CopperMind
+        from copper.workflows.store import StoreWorkflow
+        from copper.llm.mock import MockLLM
+
+        parent = CopperMind.forge("padre", "adventure")
+        parent.forge_child("fase-1", "first phase")
+
+        llm = MockLLM([self._wiki_xml()])
+        result = StoreWorkflow(parent, llm).run(source_file, no_route=True)
+
+        assert result.routed_to is None
+        assert llm._call_count == 1  # no router call
+
+    def test_store_into_explicit_child(self, tmp_minds_dir, source_file):
+        from copper.core.coppermind import CopperMind
+        from copper.workflows.store import StoreWorkflow
+        from copper.llm.mock import MockLLM
+
+        parent = CopperMind.forge("padre", "adventure")
+        parent.forge_child("fase-1", "first phase")
+
+        llm = MockLLM([self._wiki_xml()])
+        result = StoreWorkflow(parent, llm).run(source_file, into="fase-1")
+
+        assert result.routed_to == "fase-1"
+        assert llm._call_count == 1  # no router, direct to child
+
+
+# ------------------------------------------------------------------ #
 # Tap                                                                 #
 # ------------------------------------------------------------------ #
 
