@@ -1,0 +1,19 @@
+name: polish.meta
+description: |
+  User template for _meta.md generation. Produces a concise 1-2 paragraph
+  self-description of a coppermind, used by the parent scanner to decide
+  whether to search this mind for a given question.
+  Variables: mind_name, topic, context.
+template: |
+  ## Mentecobre: $mind_name (tema: $topic)
+
+  $context
+
+  ---
+
+  Escribe un resumen conciso de 1-2 párrafos describiendo el contenido de esta
+  mentecobre. Este resumen será leído por un sistema de enrutamiento para decidir
+  si debe buscarse aquí una pregunta determinada.
+
+  Sé específico sobre: temas principales, entidades clave, eventos y alcance del
+  contenido. Evita generalidades. Máximo 200 palabras.

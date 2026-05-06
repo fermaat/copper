@@ -374,3 +374,85 @@ class TestPolishWorkflow:
 
         log_content = mind.log_path.read_text()
         assert "polish" in log_content
+
+    def test_polish_flat_creates_meta(self, mind):
+        from copper.workflows.polish import PolishWorkflow
+        from copper.llm.mock import MockLLM
+
+        llm = MockLLM(["Informe.", "Meta summary of this mind."])
+        result = PolishWorkflow(mind, llm).run()
+
+        assert mind.meta_summary_path.exists()
+        assert mind.meta_summary == "Meta summary of this mind."
+        assert result.meta_path == mind.meta_summary_path
+        # flat mind: 1 archivist call + 1 meta call = 2
+        assert llm._call_count == 2
+
+    def test_polish_hierarchical_bottom_up(self, tmp_minds_dir):
+        from copper.core.coppermind import CopperMind
+        from copper.core.wiki import WikiManager
+        from copper.workflows.polish import PolishWorkflow
+        from copper.llm.mock import MockLLM
+
+        parent = CopperMind.forge("padre", "parent topic")
+        child1 = parent.forge_child("hijo-1", "child 1 topic")
+        child2 = parent.forge_child("hijo-2", "child 2 topic")
+        for mind in (child1, child2, parent):
+            WikiManager(mind.wiki_dir).create_page(
+                "info", "Info", f"Content of {mind.name}. [Fuente: src]"
+            )
+
+        # Cycle: archivist responses on even calls, meta responses on odd
+        llm = MockLLM(["# Informe.", "Meta generada."])
+        result = PolishWorkflow(parent, llm).run()
+
+        # All three minds have _meta.md
+        assert child1.meta_summary_path.exists()
+        assert child2.meta_summary_path.exists()
+        assert parent.meta_summary_path.exists()
+
+        # All three have lint reports
+        assert any(parent.wiki_dir.glob("lint-report-*.md"))
+        assert any(child1.wiki_dir.glob("lint-report-*.md"))
+        assert any(child2.wiki_dir.glob("lint-report-*.md"))
+
+        # Result tree
+        assert len(result.children_results) == 2
+        child_names = {r.mind_name for r in result.children_results}
+        assert child_names == {"hijo-1", "hijo-2"}
+
+        # 3 minds × 2 calls each = 6 total
+        assert llm._call_count == 6
+
+    def test_polish_idempotent(self, mind):
+        from copper.core.wiki import WikiManager
+        from copper.workflows.polish import PolishWorkflow
+        from copper.llm.mock import MockLLM
+
+        WikiManager(mind.wiki_dir).create_page("info", "Info", "Content. [Fuente: src]")
+        llm = MockLLM(["# Informe.", "Meta summary."])
+
+        PolishWorkflow(mind, llm).run()
+        meta_after_first = mind.meta_summary
+
+        llm2 = MockLLM(["# Informe.", "Meta summary."])
+        PolishWorkflow(mind, llm2).run()
+        meta_after_second = mind.meta_summary
+
+        # _meta.md is overwritten, not appended — same content, same length
+        assert meta_after_first == meta_after_second
+
+    def test_polish_max_depth_zero_skips_children(self, tmp_minds_dir):
+        from copper.core.coppermind import CopperMind
+        from copper.workflows.polish import PolishWorkflow
+        from copper.llm.mock import MockLLM
+
+        parent = CopperMind.forge("padre", "topic")
+        parent.forge_child("hijo", "child topic")
+
+        llm = MockLLM(["# Informe.", "Meta."])
+        PolishWorkflow(parent, llm).run(max_depth=0)
+
+        # max_depth=0: only parent polished, child untouched
+        assert not parent.children()[0].meta_summary_path.exists()
+        assert llm._call_count == 2  # archivist + meta for parent only
