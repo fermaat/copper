@@ -234,11 +234,13 @@ class TestHierarchicalTap:
 
     def test_flat_mind_scanner_not_invoked(self, tmp_minds_dir):
         from copper.core.coppermind import CopperMind
+        from copper.core.wiki import WikiManager
         from copper.llm.mock import MockLLM
         from copper.workflows.tap import TapWorkflow
 
         mind = CopperMind.forge("plana", "flat mind")
-        llm = MockLLM(["PAGE: overview", "Respuesta plana."])
+        WikiManager(mind.wiki_dir).create_page("resumen", "Resumen", "Info. [Fuente: src]")
+        llm = MockLLM(["PAGE: resumen", "Respuesta plana."])
         workflow = TapWorkflow([mind], llm)
         result = workflow.run("¿pregunta?")
 
