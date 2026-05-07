@@ -307,3 +307,216 @@ def test_phase4_store_routing(tmp_minds_dir, tmp_path):
     assert "epilogo" in child_names
 
     print("\n✓ Enrutamiento a hijo, a padre y creación de hijo nuevo — todos OK")
+
+
+# ------------------------------------------------------------------ #
+# Phase 5 — PDF structural detection                                 #
+# ------------------------------------------------------------------ #
+
+
+def test_phase5_pdf_structural_detection(tmp_minds_dir, tmp_path, monkeypatch):
+    """
+    A large PDF is split into chunks. The structurer LLM proposes two clusters.
+    StoreWorkflow builds a child coppermind per cluster and writes pages there.
+    A flat response leaves the mind without children.
+    """
+    from copper.core.coppermind import CopperMind
+    from copper.llm.mock import MockLLM
+    from copper.workflows.store import StoreWorkflow
+
+    print("\n=== Phase 5 — Detección de estructura PDF ===\n")
+
+    def wiki_xml(slug):
+        return (
+            "<wiki_updates>"
+            f'<page slug="{slug}" title="{slug.title()}" action="create">'
+            f"<content>Contenido sobre {slug}. [Fuente: src]</content>"
+            "</page>"
+            f"<index># Índice\n\n- [[{slug}]]</index>"
+            "</wiki_updates>"
+        )
+
+    # Build 10 fake chunks — enough to exceed the default threshold of 8
+    fake_chunks = [
+        f"# Sección {i}\n\nContenido de la sección {i} del módulo de aventura." for i in range(10)
+    ]
+
+    # Patch registry.to_chunks: return fake_chunks for the PDF; for cluster temp
+    # files (.md), return their full text as one chunk so each cluster = 1 LLM call.
+    monkeypatch.setattr(
+        "copper.ingest.registry.IngestRegistry.to_chunks",
+        lambda self, path, max_chars, **kw: (
+            fake_chunks if path.suffix.lower() == ".pdf" else [path.read_text()]
+        ),
+    )
+
+    # --- Run 1: structurer proposes two clusters → hierarchy built ---
+    aventura = CopperMind.forge("aventura-pdf", "Adventure module PDF")
+
+    cluster_response = (
+        '<cluster name="fase-1" topic="La Convocatoria">\n'
+        + "\n".join(str(i) for i in range(5))
+        + "\n</cluster>\n"
+        '<cluster name="fase-2" topic="El Bosque Maldito">\n'
+        + "\n".join(str(i) for i in range(5, 10))
+        + "\n</cluster>\n"
+        "<confidence>high</confidence>"
+    )
+
+    src = tmp_path / "aventura.pdf"
+    src.write_bytes(b"%PDF-1.4 fake")
+
+    llm = MockLLM([
+        cluster_response,    # structurer
+        wiki_xml("convocatoria"),  # archivist for fase-1
+        wiki_xml("bosque"),        # archivist for fase-2
+    ])
+    result = StoreWorkflow(aventura, llm).run(src)
+
+    print(f"  [Calls total]: {llm._call_count}  (structurer + 2 archivists)")
+    print(f"  [Clusters]:    {result.structural_clusters}")
+    print(f"  [Páginas]:     {result.pages_written}")
+    print("\nÁrbol resultante:")
+    print(aventura.format_tree())
+
+    assert llm._call_count == 3
+    assert result.structural_clusters == ["fase-1", "fase-2"]
+    child_names = {c.name for c in aventura.children()}
+    assert "fase-1" in child_names
+    assert "fase-2" in child_names
+    assert len(aventura.wiki_pages()) == 0  # pages land in children, not parent
+
+    # --- Run 2: structurer returns <flat/> → no children, flat store ---
+    # 10 ingots + consolidation polish = ~13 LLM calls; supply enough valid
+    # wiki responses so MockLLM never cycles back to "<flat/>".
+    plano = CopperMind.forge("modulo-plano", "Flat module")
+
+    llm2 = MockLLM(["<flat/>"] + [wiki_xml("resumen")] * 15)
+    result2 = StoreWorkflow(plano, llm2).run(src)
+
+    print(f"\n  [Páginas]:  {result2.pages_written}")
+    print(f"  [Hijos]:    {plano.children()}")
+
+    assert result2.structural_clusters is None
+    assert plano.children() == []
+    assert len(plano.wiki_pages()) > 0
+
+    print("\n✓ Estructura detectada → hijos creados; <flat/> → almacenamiento plano")
+
+
+# ------------------------------------------------------------------ #
+# Phase 6 — CLI ergonomics                                           #
+# ------------------------------------------------------------------ #
+
+
+def test_phase6_cli_ergonomics(tmp_minds_dir, tmp_path, monkeypatch):
+    """
+    End-to-end CLI smoke test for all Phase 6 additions:
+    - forge padre/hijo creates nested copperminds
+    - list prints the tree with indentation
+    - store --no-route, --into, --flat reach the workflow correctly
+    - polish --depth 0 caps recursion at the root
+    """
+    import re
+    from typer.testing import CliRunner
+    from copper.cli import app
+    from copper.core.coppermind import CopperMind
+    from copper.workflows.store import StoreResult
+    from copper.workflows.polish import PolishResult
+    from copper.llm.mock import MockLLM
+
+    runner = CliRunner()
+
+    def strip_ansi(text):
+        return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+    print("\n=== Phase 6 — CLI ergonomics ===\n")
+
+    # ── forge parent ──────────────────────────────────────────────
+    r = runner.invoke(app, ["forge", "aventura", "--topic", "Adventure module"])
+    assert r.exit_code == 0, r.output
+    print(f"forge aventura         → exit {r.exit_code}")
+
+    # ── forge parent/child via slash syntax ───────────────────────
+    r = runner.invoke(app, ["forge", "aventura/fase-1", "--topic", "La Convocatoria"])
+    assert r.exit_code == 0, r.output
+    r = runner.invoke(app, ["forge", "aventura/fase-2", "--topic", "El Bosque"])
+    assert r.exit_code == 0, r.output
+    print("forge aventura/fase-1  → exit 0")
+    print("forge aventura/fase-2  → exit 0")
+
+    aventura = CopperMind.get("aventura")
+    child_names = {c.name for c in aventura.children()}
+    assert child_names == {"fase-1", "fase-2"}
+
+    # ── list shows indented tree ──────────────────────────────────
+    r = runner.invoke(app, ["list"])
+    out = strip_ansi(r.output)
+    assert r.exit_code == 0
+    assert "aventura/" in out
+    assert "fase-1/" in out
+    assert "fase-2/" in out
+    assert out.index("aventura/") < out.index("fase-1/")
+    print("\ncopper list output:")
+    print(out.strip())
+
+    # ── forge nonexistent/child fails cleanly ─────────────────────
+    r = runner.invoke(app, ["forge", "noexiste/hijo", "--topic", "tema"])
+    assert r.exit_code == 1
+    assert "noexiste" in r.output
+    print(f"\nforge noexiste/hijo    → exit {r.exit_code} (expected)")
+
+    # ── store --no-route reaches workflow ─────────────────────────
+    src = tmp_path / "doc.txt"
+    src.write_text("Contenido de prueba.")
+
+    captured_store: dict = {}
+
+    def fake_store_run(self, source_path, no_route=False, into=None):
+        captured_store["no_route"] = no_route
+        captured_store["into"] = into
+        return StoreResult(source=source_path.name, pages_written=["p1"], tokens_used=0)
+
+    monkeypatch.setattr("copper.workflows.store.StoreWorkflow.run", fake_store_run)
+    monkeypatch.setattr("copper.api.deps.get_store_llm", lambda m: MockLLM([]))
+    monkeypatch.setattr("copper.api.deps.get_ingest_describer", lambda m: None)
+
+    r = runner.invoke(app, ["store", "aventura", str(src), "--no-route"])
+    assert r.exit_code == 0, r.output
+    assert captured_store["no_route"] is True
+    print(f"\nstore --no-route       → no_route={captured_store['no_route']}")
+
+    r = runner.invoke(app, ["store", "aventura", str(src), "--into", "fase-1"])
+    assert captured_store["into"] == "fase-1"
+    print(f"store --into fase-1    → into='{captured_store['into']}'")
+
+    r = runner.invoke(app, ["store", "aventura", str(src), "--flat"])
+    assert captured_store["no_route"] is True
+    print(f"store --flat           → no_route={captured_store['no_route']} (alias)")
+
+    # ── polish --depth 0 caps recursion ──────────────────────────
+    captured_polish: dict = {}
+
+    def fake_polish_run(self, max_depth=None):
+        captured_polish["max_depth"] = max_depth
+        return PolishResult(
+            mind_name=self.mind.name,
+            report_path=tmp_path / "lint.md",
+            report_text="ok",
+            structural_issues=[],
+            tokens_used=0,
+            cost_usd=0.0,
+        )
+
+    monkeypatch.setattr("copper.workflows.polish.PolishWorkflow.run", fake_polish_run)
+
+    r = runner.invoke(app, ["polish", "aventura", "--depth", "0"])
+    assert r.exit_code == 0, r.output
+    assert captured_polish["max_depth"] == 0
+    print(f"polish --depth 0       → max_depth={captured_polish['max_depth']}")
+
+    r = runner.invoke(app, ["polish", "aventura"])
+    assert captured_polish["max_depth"] is None
+    print(f"polish (sin --depth)   → max_depth={captured_polish['max_depth']} (recursivo)")
+
+    print("\n✓ forge padre/hijo, list árbol, store flags, polish --depth — todo OK")

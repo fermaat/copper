@@ -59,12 +59,39 @@ console = Console(theme=_COSMERE_THEME)
 
 @app.command()
 def forge(
-    name: Annotated[str, typer.Argument(help="Nombre de la mentecobre")],
+    name: Annotated[str, typer.Argument(help="Nombre de la mentecobre (o padre/hijo para sub-mentecobre)")],
     topic: Annotated[str, typer.Option("--topic", "-t", help="Tema de conocimiento")] = "",
 ):
-    """⚒  Forge a new coppermind."""
+    """⚒  Forge a new coppermind.
+
+    Use [bold]padre/hijo[/bold] to forge a child coppermind nested under an existing parent.
+    """
     if not topic:
         topic = typer.prompt("¿Sobre qué tema almacenará conocimiento esta mentecobre?")
+
+    if "/" in name:
+        parent_name, child_name = name.split("/", 1)
+        try:
+            parent = CopperMind.get(parent_name)
+        except FileNotFoundError as e:
+            console.print(f"[red]✗ {e}[/red]")
+            raise typer.Exit(1)
+        try:
+            mind = parent.forge_child(child_name, topic)
+            console.print(
+                Panel(
+                    f"[bold green]Sub-mentecobre forjada:[/bold green] [cyan]{child_name}[/cyan]\n"
+                    f"[dim]Padre:[/dim] [cyan]{parent_name}[/cyan]\n"
+                    f"[dim]Tema:[/dim] {topic}\n"
+                    f"[dim]Ubicación:[/dim] {mind.path}",
+                    title="[copper]⚒ Forja completa[/copper]",
+                    border_style="yellow",
+                )
+            )
+        except FileExistsError as e:
+            console.print(f"[red]✗ {e}[/red]")
+            raise typer.Exit(1)
+        return
 
     try:
         mind = CopperMind.forge(name, topic)
@@ -90,6 +117,15 @@ def store(
     source: Annotated[Optional[Path], typer.Argument(help="Fichero a almacenar")] = None,
     all_raw: Annotated[
         bool, typer.Option("--all", help="Procesar todos los ficheros en raw/")
+    ] = False,
+    no_route: Annotated[
+        bool, typer.Option("--no-route", help="Almacenar en esta mentecobre directamente, sin enrutamiento a hijos")
+    ] = False,
+    into: Annotated[
+        Optional[str], typer.Option("--into", help="Enrutar a una sub-mentecobre específica por nombre")
+    ] = None,
+    flat: Annotated[
+        bool, typer.Option("--flat", help="Desactivar la detección de estructura en PDFs (almacena plano)")
     ] = False,
 ):
     """📥  Store knowledge into a coppermind (fill it)."""
@@ -130,8 +166,8 @@ def store(
             f"[cyan]Almacenando '{src.name}' en la [copper]mentecobre[/copper]...[/cyan]"
         ):
             try:
-                result = workflow.run(src)
-            except FileNotFoundError as e:
+                result = workflow.run(src, no_route=no_route or flat, into=into)
+            except (FileNotFoundError, ValueError) as e:
                 console.print(f"[red]✗ {e}[/red]")
                 continue
 
@@ -140,6 +176,12 @@ def store(
             f"[green]✓[/green] [bold]{src.name}[/bold] almacenado → "
             f"[cyan]{len(result.pages_written)}[/cyan] páginas wiki actualizadas{cost_str}"
         )
+        if result.routed_to:
+            console.print(f"  [dim]↳ enrutado a sub-mentecobre: {result.routed_to}[/dim]")
+        if result.structural_clusters:
+            console.print(
+                f"  [dim]↳ estructura detectada: {', '.join(result.structural_clusters)}[/dim]"
+            )
         if result.pages_written:
             for p in result.pages_written:
                 console.print(f"  [dim]· {p}[/dim]")
@@ -218,6 +260,10 @@ def tap(
 @app.command()
 def polish(
     name: Annotated[str, typer.Argument(help="Nombre de la mentecobre")],
+    depth: Annotated[
+        Optional[int],
+        typer.Option("--depth", "-d", help="Profundidad máxima (0 = solo esta mentecobre, sin descender a hijos)")
+    ] = None,
 ):
     """🪙  Polish a coppermind (health check)."""
     try:
@@ -232,7 +278,7 @@ def polish(
     with console.status(
         "[cyan]El [copper]Archivista[/copper] inspecciona la [copper]mentecobre[/copper]...[/cyan]"
     ):
-        result = workflow.run()
+        result = workflow.run(max_depth=depth)
 
     console.print(
         Panel(
@@ -262,24 +308,10 @@ def list_minds():
         )
         return
 
-    table = Table(title="Mentecobres", border_style="yellow", header_style="bold cyan")
-    table.add_column("Nombre", style="cyan")
-    table.add_column("Tema")
-    table.add_column("Fuentes", justify="right")
-    table.add_column("Páginas wiki", justify="right")
-    table.add_column("Creada", style="dim")
-
+    console.print("[bold yellow]Mentecobres[/bold yellow]\n")
     for mind in minds:
-        stats = mind.stats()
-        table.add_row(
-            mind.name,
-            stats["topic"],
-            str(stats["raw_sources"]),
-            str(stats["wiki_pages"]),
-            mind.config.created[:10],
-        )
-
-    console.print(table)
+        console.print(mind.format_tree())
+        console.print()
 
 
 @app.command()
