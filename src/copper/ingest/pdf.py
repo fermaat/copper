@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +47,48 @@ _PAGE_SPAN_THRESHOLD = settings.copper_pdf_page_span_threshold
 _PAGE_SPAN_SKIP_MIN_TEXT = settings.copper_pdf_page_span_skip_min_text
 
 _LLM_SECTION_PROMPT_NAME = "pdf.section"
+_STRUCTURER_PROMPT_NAME = "ingest.structurer"
+
+# Max chars of the first line used as chunk preview in structurer input.
+_CHUNK_PREVIEW_CHARS = 120
+
+
+@dataclass
+class ClusterInfo:
+    name: str
+    topic: str
+    chunk_indices: list[int] = field(default_factory=list)
+
+
+@dataclass
+class StructureProposal:
+    clusters: list[ClusterInfo]
+    confidence: str  # "high" | "low"
+    is_flat: bool
+
+
+def _parse_structure_proposal(text: str) -> StructureProposal:
+    """Parse a structurer LLM response into a StructureProposal."""
+    if "<flat/>" in text or "<flat />" in text:
+        return StructureProposal(clusters=[], confidence="high", is_flat=True)
+
+    cluster_re = re.compile(
+        r'<cluster\s+name="([^"]+)"\s+topic="([^"]+)"[^>]*>(.*?)</cluster>',
+        re.DOTALL,
+    )
+    clusters: list[ClusterInfo] = []
+    for m in cluster_re.finditer(text):
+        name, topic, body = m.group(1).strip(), m.group(2).strip(), m.group(3)
+        indices = [int(x.strip()) for x in body.splitlines() if x.strip().isdigit()]
+        if indices:
+            clusters.append(ClusterInfo(name=name, topic=topic, chunk_indices=indices))
+
+    if not clusters:
+        return StructureProposal(clusters=[], confidence="low", is_flat=True)
+
+    confidence_m = re.search(r"<confidence>(high|low)</confidence>", text)
+    confidence = confidence_m.group(1) if confidence_m else "high"
+    return StructureProposal(clusters=clusters, confidence=confidence, is_flat=False)
 
 
 class PDFPlugin(IngestPlugin):
@@ -524,3 +567,29 @@ class PDFPlugin(IngestPlugin):
             return []
 
         return self._split_by_titles(full_text, titles, max_chars)
+
+    def detect_structure(
+        self, chunks: list[str], llm: Any
+    ) -> tuple[StructureProposal, int, float]:
+        """Ask the LLM to propose a hierarchical grouping of already-computed chunks.
+
+        Returns (proposal, tokens_used, cost_usd).
+        """
+        from copper.llm.base import Message
+
+        listing_lines = [
+            f"[{i}] {chunks[i].splitlines()[0][:_CHUNK_PREVIEW_CHARS]}"
+            for i in range(len(chunks))
+        ]
+        listing = "\n".join(listing_lines)
+        messages = [
+            Message(role="user", content=render_prompt(_STRUCTURER_PROMPT_NAME, chunk_listing=listing))
+        ]
+        logger.info(f"[pdf] Detecting structure across {len(chunks)} chunks...")
+        response = llm.complete(messages)
+        proposal = _parse_structure_proposal(response.text)
+        logger.info(
+            f"[pdf] Structure proposal: flat={proposal.is_flat}, "
+            f"clusters={len(proposal.clusters)}, confidence={proposal.confidence}"
+        )
+        return proposal, response.tokens_used, response.cost_usd

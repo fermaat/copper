@@ -24,6 +24,7 @@ from copper.prompts import render_prompt
 
 if TYPE_CHECKING:
     from copper.ingest.image_describer import ImageDescriber
+    from copper.ingest.pdf import StructureProposal
 
 
 # Maximum characters sent to the LLM per chunk. Override via COPPER_STORE_MAX_CHUNK_CHARS.
@@ -133,12 +134,97 @@ class StoreWorkflow:
 
         return child, target_str, response.tokens_used, response.cost_usd
 
+    def _detect_pdf_structure(
+        self, path: Path, chunks: list[str]
+    ) -> tuple["StructureProposal | None", int, float]:
+        """Run structure detection on a PDF source, if eligible.
+
+        Returns (proposal_or_None, tokens_used, cost_usd).
+        """
+        if path.suffix.lower() != ".pdf":
+            return None, 0, 0.0
+        if len(chunks) < settings.copper_pdf_structure_min_chunks:
+            return None, 0, 0.0
+
+        from copper.ingest.pdf import PDFPlugin
+
+        proposal, tokens, cost = PDFPlugin().detect_structure(chunks, self.llm)
+        return proposal, tokens, cost
+
+    def _run_structural_ingest(
+        self,
+        source_name: str,
+        chunks: list[str],
+        proposal: "StructureProposal",
+        pre_tokens: int,
+        pre_cost: float,
+    ) -> "StoreResult":
+        """Store each cluster of chunks into its own child coppermind."""
+        import tempfile
+
+        all_pages: list[str] = []
+        total_tokens = pre_tokens
+        total_cost = pre_cost
+        cluster_names: list[str] = []
+
+        existing_children = {c.name: c for c in self.mind.children()}
+
+        for cluster in proposal.clusters:
+            child = existing_children.get(cluster.name) or self.mind.forge_child(
+                cluster.name, cluster.topic
+            )
+            cluster_names.append(cluster.name)
+
+            cluster_text = "\n\n---\n\n".join(
+                chunks[i] for i in cluster.chunk_indices if i < len(chunks)
+            )
+
+            with tempfile.NamedTemporaryFile(
+                suffix=".md",
+                prefix=f"copper_cluster_{cluster.name}_",
+                mode="w",
+                encoding="utf-8",
+                delete=False,
+            ) as tmp:
+                tmp.write(cluster_text)
+                tmp_path = Path(tmp.name)
+
+            try:
+                child_wf = StoreWorkflow(child, self.llm, self.image_describer)
+                child_result = child_wf.run(tmp_path, no_route=True)
+                all_pages.extend(child_result.pages_written)
+                total_tokens += child_result.tokens_used
+                total_cost += child_result.cost_usd
+                logger.info(
+                    f"[store] Cluster '{cluster.name}': "
+                    f"{len(child_result.pages_written)} pages written"
+                )
+            finally:
+                tmp_path.unlink(missing_ok=True)
+
+        self.mind.append_log(
+            "store",
+            f"'{source_name}' estructurado en {len(proposal.clusters)} sub-mentecobres: "
+            + ", ".join(cluster_names),
+        )
+        logger.info(
+            f"[store] Structural ingest done: {len(proposal.clusters)} clusters, "
+            f"{len(all_pages)} total pages"
+        )
+        return StoreResult(
+            source=source_name,
+            pages_written=all_pages,
+            tokens_used=total_tokens,
+            cost_usd=total_cost,
+            structural_clusters=cluster_names,
+        )
+
     def run(
         self,
         source_path: Path,
         no_route: bool = False,
         into: str | None = None,
-    ) -> StoreResult:
+    ) -> "StoreResult":
         if not source_path.exists():
             raise FileNotFoundError(f"Fuente no encontrada: {source_path}")
 
@@ -200,6 +286,18 @@ class StoreWorkflow:
         logger.info(
             f"[store] '{source_name}' → {char_count:,} chars smelted into {total_ingots} ingot(s)"
         )
+
+        # Phase 5: detect structure in large PDFs and fork to child copperminds.
+        if not no_route:
+            proposal, struct_tokens, struct_cost = self._detect_pdf_structure(raw_path, chunks)
+            if proposal is not None and not proposal.is_flat:
+                return self._run_structural_ingest(
+                    source_name,
+                    chunks,
+                    proposal,
+                    pre_tokens=router_tokens + struct_tokens,
+                    pre_cost=router_cost + struct_cost,
+                )
 
         schema = self.mind.schema()
         all_pages: list[str] = []
@@ -636,16 +734,19 @@ class StoreResult:
         tokens_used: int,
         cost_usd: float = 0.0,
         routed_to: str | None = None,
+        structural_clusters: list[str] | None = None,
     ):
         self.source = source
         self.pages_written = pages_written
         self.tokens_used = tokens_used
         self.cost_usd = cost_usd
         self.routed_to = routed_to
+        self.structural_clusters = structural_clusters
 
     def __repr__(self) -> str:
         routed = f", routed_to={self.routed_to!r}" if self.routed_to else ""
+        clustered = f", clusters={self.structural_clusters!r}" if self.structural_clusters else ""
         return (
             f"StoreResult(source={self.source!r}, pages={len(self.pages_written)}, "
-            f"tokens={self.tokens_used}, cost=${self.cost_usd:.6f}{routed})"
+            f"tokens={self.tokens_used}, cost=${self.cost_usd:.6f}{routed}{clustered})"
         )

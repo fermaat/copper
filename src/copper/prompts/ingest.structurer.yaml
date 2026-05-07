@@ -1,0 +1,44 @@
+name: ingest.structurer
+description: |
+  Analyzes a numbered listing of PDF chunk previews and proposes a hierarchical
+  grouping into named clusters (one per top-level section / chapter / phase).
+  Variables: chunk_listing (one line per chunk: "[N] first-line-preview").
+template: |
+  You are analyzing the structure of a document that has been split into chunks.
+  Each line below shows a chunk index and the first line of that chunk.
+
+  ## Chunks
+  $chunk_listing
+
+  ---
+
+  Task: decide whether these chunks form distinct top-level sections that
+  warrant separate sub-copperminds (e.g. chapters, phases, acts).
+
+  Rules:
+  - Only propose a hierarchy if there are at least 2 clearly named top-level
+    sections and high confidence they are genuinely separate topics.
+  - Each cluster must contain at least one chunk.
+  - A chunk may belong to at most one cluster; any unassigned chunks go to
+    whichever cluster they best fit.
+  - Use short, slug-friendly names (lowercase, hyphens, no spaces).
+  - If structure is unclear or the content is one cohesive topic, return <flat/>.
+
+  Respond ONLY with one of these two formats:
+
+  Flat (no clear structure):
+  <flat/>
+
+  Hierarchical (one <cluster> per top-level section):
+  <cluster name="section-slug" topic="Human-readable topic description">
+  0
+  1
+  2
+  </cluster>
+  <cluster name="another-section" topic="Another topic">
+  3
+  4
+  </cluster>
+  <confidence>high</confidence>
+
+  Use <confidence>low</confidence> if you are uncertain.

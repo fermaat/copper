@@ -106,6 +106,8 @@ class Settings(CoreSettings):
     # Persist described images to disk so the UI can render them alongside
     # descriptions. Images live in <mind>/raw/images/.
     copper_ingest_save_images: bool = True
+    # Minimum chunks required to trigger PDF structure detection.
+    copper_pdf_structure_min_chunks: int = 8
 
     # ── API server ──────────────────────────────────────────────────
     copper_host: str = "127.0.0.1"
