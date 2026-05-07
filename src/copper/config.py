@@ -108,6 +108,13 @@ class Settings(CoreSettings):
     copper_ingest_save_images: bool = True
     # Minimum chunks required to trigger PDF structure detection.
     copper_pdf_structure_min_chunks: int = 8
+    # Deep polish caps — prevent runaway LLM calls on large trees.
+    copper_deep_polish_max_moves: int = 30
+    copper_deep_polish_max_transversal: int = 10
+    # Entity must appear in at least this many children to be a transversal candidate.
+    copper_deep_polish_min_children: int = 2
+    # Entity must appear in at least this many pages total (across all children).
+    copper_deep_polish_min_pages: int = 3
 
     # ── API server ──────────────────────────────────────────────────
     copper_host: str = "127.0.0.1"

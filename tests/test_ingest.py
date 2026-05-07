@@ -16,8 +16,10 @@ from copper.ingest.registry import IngestRegistry, default_registry
 @pytest.fixture
 def tmp_minds_dir(tmp_path, monkeypatch):
     import copper.core.coppermind as cm_module
+
     monkeypatch.setattr(cm_module, "MINDS_DIR", tmp_path)
     return tmp_path
+
 
 # ------------------------------------------------------------------ #
 # PlainTextPlugin                                                     #
@@ -445,7 +447,9 @@ class TestPDFStructureDetection:
         assert llm._call_count == 1
         assert result.structural_clusters is None
 
-    def test_store_workflow_structure_detection_below_threshold(self, tmp_minds_dir, tmp_path, monkeypatch):
+    def test_store_workflow_structure_detection_below_threshold(
+        self, tmp_minds_dir, tmp_path, monkeypatch
+    ):
         """Structure detection is skipped when chunks < min_chunks threshold."""
         import copper.core.coppermind as cm_module
         from copper.core.coppermind import CopperMind

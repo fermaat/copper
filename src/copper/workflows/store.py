@@ -76,9 +76,7 @@ class StoreWorkflow:
         self.image_describer = image_describer
         self.wiki = WikiManager(mind.wiki_dir)
 
-    def _route(
-        self, source_path: Path
-    ) -> tuple["CopperMind", str | None, int, float]:
+    def _route(self, source_path: Path) -> tuple["CopperMind", str | None, int, float]:
         """Call the router LLM and resolve the destination mind.
 
         Returns (target_mind, routed_to_name, tokens_used, cost_usd).
@@ -104,8 +102,7 @@ class StoreWorkflow:
             Message(role="user", content=user_content),
         ]
         logger.info(
-            f"[store] Routing '{source_path.name}' across "
-            f"{len(children)} sub-copperminds..."
+            f"[store] Routing '{source_path.name}' across " f"{len(children)} sub-copperminds..."
         )
         response = self.llm.complete(messages)
         target_str, new_child_topic = _parse_router_response(response.text)
@@ -115,11 +112,9 @@ class StoreWorkflow:
             return self.mind, None, response.tokens_used, response.cost_usd
 
         if target_str.startswith("new_child:"):
-            child_name = target_str[len("new_child:"):]
+            child_name = target_str[len("new_child:") :]
             topic = new_child_topic or f"Sub-topic of {self.mind.config.topic}"
-            logger.info(
-                f"[store] Forjando nueva sub-mentecobre '{child_name}' (tema: {topic})..."
-            )
+            logger.info(f"[store] Forjando nueva sub-mentecobre '{child_name}' (tema: {topic})...")
             new_child = self.mind.forge_child(child_name, topic)
             return new_child, child_name, response.tokens_used, response.cost_usd
 
@@ -127,8 +122,7 @@ class StoreWorkflow:
         child = child_map.get(target_str)
         if child is None:
             logger.warning(
-                f"[store] Router returned unknown child '{target_str}', "
-                "falling back to parent"
+                f"[store] Router returned unknown child '{target_str}', " "falling back to parent"
             )
             return self.mind, None, response.tokens_used, response.cost_usd
 
@@ -238,9 +232,7 @@ class StoreWorkflow:
             child_map = {c.name: c for c in self.mind.children()}
             child = child_map.get(into)
             if child is None:
-                raise ValueError(
-                    f"Sub-mentecobre '{into}' no encontrada en '{self.mind.name}'."
-                )
+                raise ValueError(f"Sub-mentecobre '{into}' no encontrada en '{self.mind.name}'.")
             target_mind = child
             routed_to = child.name
         elif not no_route and self.mind.children():

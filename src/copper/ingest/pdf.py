@@ -568,9 +568,7 @@ class PDFPlugin(IngestPlugin):
 
         return self._split_by_titles(full_text, titles, max_chars)
 
-    def detect_structure(
-        self, chunks: list[str], llm: Any
-    ) -> tuple[StructureProposal, int, float]:
+    def detect_structure(self, chunks: list[str], llm: Any) -> tuple[StructureProposal, int, float]:
         """Ask the LLM to propose a hierarchical grouping of already-computed chunks.
 
         Returns (proposal, tokens_used, cost_usd).
@@ -578,12 +576,13 @@ class PDFPlugin(IngestPlugin):
         from copper.llm.base import Message
 
         listing_lines = [
-            f"[{i}] {chunks[i].splitlines()[0][:_CHUNK_PREVIEW_CHARS]}"
-            for i in range(len(chunks))
+            f"[{i}] {chunks[i].splitlines()[0][:_CHUNK_PREVIEW_CHARS]}" for i in range(len(chunks))
         ]
         listing = "\n".join(listing_lines)
         messages = [
-            Message(role="user", content=render_prompt(_STRUCTURER_PROMPT_NAME, chunk_listing=listing))
+            Message(
+                role="user", content=render_prompt(_STRUCTURER_PROMPT_NAME, chunk_listing=listing)
+            )
         ]
         logger.info(f"[pdf] Detecting structure across {len(chunks)} chunks...")
         response = llm.complete(messages)

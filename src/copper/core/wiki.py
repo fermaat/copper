@@ -139,6 +139,14 @@ class WikiManager:
         current = log.raw
         log.write(current + entry)
 
+    def move_page(self, slug: str, target_wiki: WikiManager) -> None:
+        """Move a page from this wiki to target_wiki (copy + delete)."""
+        page = self.page(slug)
+        if not page.exists():
+            raise FileNotFoundError(f"Wiki page '{slug}' does not exist.")
+        target_wiki.page(slug).write(page.raw)
+        page.path.unlink()
+
     def find_pages_mentioning(self, term: str) -> list[WikiPage]:
         return [p for p in self.all_pages() if term.lower() in p.raw.lower()]
 

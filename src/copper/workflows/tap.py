@@ -114,8 +114,7 @@ class TapWorkflow:
         question: str,
     ) -> "LLMResponse":
         children_block = "\n".join(
-            f"- {name}: {summary or '(no meta summary yet)'}"
-            for name, summary in children_info
+            f"- {name}: {summary or '(no meta summary yet)'}" for name, summary in children_info
         )
         user_content = (
             f"## Parent knowledge base overview\n{parent_context or '(empty)'}\n\n"
@@ -162,8 +161,8 @@ class TapWorkflow:
         # Hierarchical path: single root mind with sub-copperminds uses scanner + recursion.
         # Linked minds (expand_with_links) are orthogonal to parent/child — kept flat.
         if len(self.minds) == 1 and self.minds[0].children():
-            context_minds, selected, total_tokens, total_cost = (
-                self._gather_minds_and_pages(self.minds[0], retrieval_question, depth=0)
+            context_minds, selected, total_tokens, total_cost = self._gather_minds_and_pages(
+                self.minds[0], retrieval_question, depth=0
             )
         else:
             retrieval = self.retriever.retrieve(retrieval_question, self.minds)

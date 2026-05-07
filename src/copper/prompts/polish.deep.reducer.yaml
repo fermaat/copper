@@ -1,0 +1,35 @@
+name: polish.deep.reducer
+description: |
+  Cross-child plan generator for deep structural polish. Receives the aggregated
+  entity map from all children and proposes move actions and transversal page
+  candidates.
+  Variables: parent_name, entity_summary.
+template: |
+  You are the Archivist planning structural improvements for a hierarchical coppermind.
+
+  Parent: $parent_name
+
+  ## Entity map (child → entity → pages)
+  $entity_summary
+
+  ---
+
+  Propose structural improvements. You may suggest:
+
+  1. **Moves** — re-route a page from one child to another if it clearly belongs
+     there (based on its slug alone; assume content follows the slug).
+  2. **Transversal pages** — for entities that span 2+ children, propose a new
+     synthesis page at the parent level (e.g. "characters.md").
+
+  Respond ONLY with:
+  <plan>
+    <move slug="page-slug" from="child-name" to="child-name" reason="brief reason"/>
+    <transversal entity="entity-name" kind="character|location|theme|item|concept" children="child1,child2" reason="brief reason"/>
+  </plan>
+
+  Rules:
+  - Only propose a move if you are confident it belongs in the other child.
+  - Only propose transversals for entities in 2+ children.
+  - Keep reasons to one short sentence.
+  - If nothing warrants action, respond with: <plan/>
+  - No preamble, no explanation, only the XML block.

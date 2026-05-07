@@ -33,6 +33,7 @@ from copper.api.deps import get_ingest_describer, get_store_llm, get_tap_llm
 from copper.workflows.store import StoreResult, StoreWorkflow
 from copper.workflows.tap import TapWorkflow
 from copper.workflows.polish import PolishWorkflow
+from copper.workflows.deep_polish import DeepPolishWorkflow
 
 # Theme so cosmere-flavour tokens highlight consistently in the terminal.
 # Keep this in sync with the `.cosmere` CSS class used by the web UI.
@@ -59,7 +60,9 @@ console = Console(theme=_COSMERE_THEME)
 
 @app.command()
 def forge(
-    name: Annotated[str, typer.Argument(help="Nombre de la mentecobre (o padre/hijo para sub-mentecobre)")],
+    name: Annotated[
+        str, typer.Argument(help="Nombre de la mentecobre (o padre/hijo para sub-mentecobre)")
+    ],
     topic: Annotated[str, typer.Option("--topic", "-t", help="Tema de conocimiento")] = "",
 ):
     """⚒  Forge a new coppermind.
@@ -119,13 +122,20 @@ def store(
         bool, typer.Option("--all", help="Procesar todos los ficheros en raw/")
     ] = False,
     no_route: Annotated[
-        bool, typer.Option("--no-route", help="Almacenar en esta mentecobre directamente, sin enrutamiento a hijos")
+        bool,
+        typer.Option(
+            "--no-route", help="Almacenar en esta mentecobre directamente, sin enrutamiento a hijos"
+        ),
     ] = False,
     into: Annotated[
-        Optional[str], typer.Option("--into", help="Enrutar a una sub-mentecobre específica por nombre")
+        Optional[str],
+        typer.Option("--into", help="Enrutar a una sub-mentecobre específica por nombre"),
     ] = None,
     flat: Annotated[
-        bool, typer.Option("--flat", help="Desactivar la detección de estructura en PDFs (almacena plano)")
+        bool,
+        typer.Option(
+            "--flat", help="Desactivar la detección de estructura en PDFs (almacena plano)"
+        ),
     ] = False,
 ):
     """📥  Store knowledge into a coppermind (fill it)."""
@@ -262,8 +272,24 @@ def polish(
     name: Annotated[str, typer.Argument(help="Nombre de la mentecobre")],
     depth: Annotated[
         Optional[int],
-        typer.Option("--depth", "-d", help="Profundidad máxima (0 = solo esta mentecobre, sin descender a hijos)")
+        typer.Option(
+            "--depth",
+            "-d",
+            help="Profundidad máxima (0 = solo esta mentecobre, sin descender a hijos)",
+        ),
     ] = None,
+    deep: Annotated[
+        bool,
+        typer.Option(
+            "--deep", help="Reorganización estructural profunda (mueve páginas entre hijos)"
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Solo muestra el plan; no aplica cambios")
+    ] = False,
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Aplica todas las acciones sin confirmación")
+    ] = False,
 ):
     """🪙  Polish a coppermind (health check)."""
     try:
@@ -273,6 +299,11 @@ def polish(
         raise typer.Exit(1)
 
     llm = get_store_llm(mind)
+
+    if deep:
+        _polish_deep(mind, llm, dry_run=dry_run, auto_yes=yes)
+        return
+
     workflow = PolishWorkflow(mind, llm)
 
     with console.status(
@@ -295,6 +326,44 @@ def polish(
 
     cost_str = f" · ${result.cost_usd:.4f}" if result.cost_usd else ""
     console.print(f"\n[dim]Informe guardado en: {result.report_path}{cost_str}[/dim]")
+
+
+def _polish_deep(mind, llm, *, dry_run: bool, auto_yes: bool) -> None:
+    mode = "[dim](dry-run)[/dim]" if dry_run else ""
+    with console.status(
+        f"[cyan]El [copper]Archivista[/copper] analiza la estructura del árbol {mode}...[/cyan]"
+    ):
+        workflow = DeepPolishWorkflow(mind, llm)
+        result = workflow.run(dry_run=dry_run, auto_yes=auto_yes)
+
+    plan = result.plan
+    if plan.is_empty:
+        console.print("[green]✓ No se encontraron acciones estructurales necesarias.[/green]")
+        return
+
+    console.print(f"\n[bold yellow]🪙 Plan de reorganización — {mind.name}[/bold yellow]\n")
+
+    if plan.moves:
+        console.print("[bold]Movimientos de páginas:[/bold]")
+        for m in plan.moves:
+            console.print(f"  [cyan]↔[/cyan] {m.description()}")
+
+    if plan.transversals:
+        console.print("[bold]Páginas transversales:[/bold]")
+        for t in plan.transversals:
+            console.print(f"  [cyan]+[/cyan] {t.description()}")
+
+    if dry_run:
+        console.print("\n[dim]Dry-run: ningún cambio aplicado.[/dim]")
+        return
+
+    if result.moves_applied or result.transversals_applied:
+        console.print(
+            f"\n[green]✓ Aplicados: {result.pages_moved} movimiento(s), {result.pages_created} página(s) sintetizada(s)[/green]"
+        )
+
+    cost_str = f" · ${result.cost_usd:.4f}" if result.cost_usd else ""
+    console.print(f"[dim]Tokens usados: {result.tokens_used}{cost_str}[/dim]")
 
 
 @app.command(name="list")

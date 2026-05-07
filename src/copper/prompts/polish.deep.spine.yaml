@@ -1,0 +1,21 @@
+name: polish.deep.spine
+description: |
+  Parent spine regeneration for deep structural polish. After moves and synthesis,
+  refreshes the parent's overview.md to reflect the current state of all children.
+  Variables: parent_name, children_listing.
+template: |
+  You are the Archivist updating the parent coppermind's spine after structural reorganization.
+
+  Parent: $parent_name
+
+  ## Children (name → topic → page count)
+  $children_listing
+
+  ---
+
+  Write an updated overview for the parent coppermind that:
+  - Describes the narrative arc or thematic structure across all children.
+  - Briefly explains what each child covers and how they relate.
+  - Uses clear markdown headings.
+
+  Write only the page body — no frontmatter, no slug header.

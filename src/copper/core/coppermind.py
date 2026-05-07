@@ -11,8 +11,12 @@ import yaml
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from copper.config import settings
+
+if TYPE_CHECKING:
+    from copper.core.wiki import WikiManager
 
 MINDS_DIR = settings.minds_path
 
@@ -95,6 +99,12 @@ class CopperMind:
     @property
     def wiki_dir(self) -> Path:
         return self.path / "wiki"
+
+    @property
+    def wiki(self) -> "WikiManager":
+        from copper.core.wiki import WikiManager
+
+        return WikiManager(self.wiki_dir)
 
     @property
     def outputs_dir(self) -> Path:

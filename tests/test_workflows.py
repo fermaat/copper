@@ -145,10 +145,12 @@ class TestRoutedStore:
         parent = CopperMind.forge("padre", "adventure")
         parent.forge_child("fase-1", "first phase")
 
-        llm = MockLLM([
-            "<route>fase-1</route>",   # router → fase-1
-            self._wiki_xml(),          # archivist in fase-1
-        ])
+        llm = MockLLM(
+            [
+                "<route>fase-1</route>",  # router → fase-1
+                self._wiki_xml(),  # archivist in fase-1
+            ]
+        )
         result = StoreWorkflow(parent, llm).run(source_file)
 
         assert result.routed_to == "fase-1"
@@ -166,10 +168,12 @@ class TestRoutedStore:
         parent = CopperMind.forge("padre", "adventure")
         parent.forge_child("fase-1", "first phase")
 
-        llm = MockLLM([
-            "<route>parent</route>",  # router → stay at parent
-            self._wiki_xml(),
-        ])
+        llm = MockLLM(
+            [
+                "<route>parent</route>",  # router → stay at parent
+                self._wiki_xml(),
+            ]
+        )
         result = StoreWorkflow(parent, llm).run(source_file)
 
         assert result.routed_to is None
@@ -184,10 +188,12 @@ class TestRoutedStore:
         parent = CopperMind.forge("padre", "adventure")
         parent.forge_child("fase-1", "first phase")
 
-        llm = MockLLM([
-            "<route>new_child:fase-2</route>\n<topic>Segunda fase del módulo</topic>",
-            self._wiki_xml(),
-        ])
+        llm = MockLLM(
+            [
+                "<route>new_child:fase-2</route>\n<topic>Segunda fase del módulo</topic>",
+                self._wiki_xml(),
+            ]
+        )
         result = StoreWorkflow(parent, llm).run(source_file)
 
         assert result.routed_to == "fase-2"
@@ -338,7 +344,7 @@ class TestHierarchicalTap:
         )
 
         child_map = {}
-        for name in (children or []):
+        for name in children or []:
             child = parent.forge_child(name, f"topic for {name}")
             WikiManager(child.wiki_dir).create_page(
                 f"pagina-{name}", f"Page {name}", f"Content of {name}. [Fuente: src]"
@@ -368,11 +374,13 @@ class TestHierarchicalTap:
         from copper.workflows.tap import TapWorkflow
 
         parent, children = self._make_tree(tmp_minds_dir, ["fase-1", "fase-2"])
-        llm = MockLLM([
-            "<descend>\nfase-1\n</descend>",  # scanner → pick fase-1
-            "PAGE: pagina-fase-1",            # retriever on fase-1
-            "Respuesta sobre fase-1.",        # final answer
-        ])
+        llm = MockLLM(
+            [
+                "<descend>\nfase-1\n</descend>",  # scanner → pick fase-1
+                "PAGE: pagina-fase-1",  # retriever on fase-1
+                "Respuesta sobre fase-1.",  # final answer
+            ]
+        )
         workflow = TapWorkflow([parent], llm)
         result = workflow.run("¿qué pasa en la fase 1?")
 
@@ -388,12 +396,14 @@ class TestHierarchicalTap:
         from copper.workflows.tap import TapWorkflow
 
         parent, _ = self._make_tree(tmp_minds_dir, ["fase-1", "fase-2"])
-        llm = MockLLM([
-            "<descend>\nfase-1\nfase-2\n</descend>",  # scanner → both
-            "PAGE: pagina-fase-1",                     # retriever on fase-1
-            "PAGE: pagina-fase-2",                     # retriever on fase-2
-            "Respuesta que abarca ambas fases.",        # final answer
-        ])
+        llm = MockLLM(
+            [
+                "<descend>\nfase-1\nfase-2\n</descend>",  # scanner → both
+                "PAGE: pagina-fase-1",  # retriever on fase-1
+                "PAGE: pagina-fase-2",  # retriever on fase-2
+                "Respuesta que abarca ambas fases.",  # final answer
+            ]
+        )
         workflow = TapWorkflow([parent], llm)
         result = workflow.run("¿resumen de todas las fases?")
 
@@ -406,10 +416,12 @@ class TestHierarchicalTap:
         from copper.workflows.tap import TapWorkflow
 
         parent, _ = self._make_tree(tmp_minds_dir, ["fase-1"])
-        llm = MockLLM([
-            "<descend>\n</descend>",  # scanner → parent only
-            "Respuesta solo del padre.",
-        ])
+        llm = MockLLM(
+            [
+                "<descend>\n</descend>",  # scanner → parent only
+                "Respuesta solo del padre.",
+            ]
+        )
         workflow = TapWorkflow([parent], llm)
         result = workflow.run("¿pregunta general?")
 
@@ -433,12 +445,14 @@ class TestHierarchicalTap:
             "deep-page", "Deep Page", "Deep content. [Fuente: deep]"
         )
 
-        llm = MockLLM([
-            "<descend>\nchild\n</descend>",       # scanner on root
-            "<descend>\ngrandchild\n</descend>",  # scanner on child
-            "PAGE: deep-page",                    # retriever on grandchild
-            "Respuesta profunda.",                # final answer
-        ])
+        llm = MockLLM(
+            [
+                "<descend>\nchild\n</descend>",  # scanner on root
+                "<descend>\ngrandchild\n</descend>",  # scanner on child
+                "PAGE: deep-page",  # retriever on grandchild
+                "Respuesta profunda.",  # final answer
+            ]
+        )
         workflow = TapWorkflow([root], llm)
         result = workflow.run("¿contenido profundo?")
 

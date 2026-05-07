@@ -15,6 +15,7 @@ import pytest
 @pytest.fixture
 def tmp_minds_dir(tmp_path, monkeypatch):
     import copper.core.coppermind as cm_module
+
     monkeypatch.setattr(cm_module, "MINDS_DIR", tmp_path)
     return tmp_path
 
@@ -42,9 +43,9 @@ def test_phase1_tree_navigation(tmp_minds_dir):
     print("\n=== Phase 1 — Árbol jerárquico de copperminds ===\n")
 
     aventura = CopperMind.forge("aventura", "Adventure module")
-    fase1    = aventura.forge_child("fase-1", "La Convocatoria")
-    fase2    = aventura.forge_child("fase-2", "El Bosque Maldito")
-    enc      = fase1.forge_child("encuentro-inicial", "El encuentro en la taberna")
+    fase1 = aventura.forge_child("fase-1", "La Convocatoria")
+    fase2 = aventura.forge_child("fase-2", "El Bosque Maldito")
+    enc = fase1.forge_child("encuentro-inicial", "El encuentro en la taberna")
 
     fase1.meta_summary_path.write_text(
         "Fase 1: los héroes son convocados por el rey y viajan a Luthadel."
@@ -92,19 +93,22 @@ def test_phase2_hierarchical_tap(tmp_minds_dir):
     # Build tree
     aventura = CopperMind.forge("aventura", "Adventure module")
     WikiManager(aventura.wiki_dir).create_page(
-        "overview", "Overview",
+        "overview",
+        "Overview",
         "Three-phase adventure. Heroes: Vin, Elend, Sazed. [Fuente: overview]",
     )
     fase1 = aventura.forge_child("fase-1", "La Convocatoria")
     fase1.meta_summary_path.write_text("Fase 1: los héroes son convocados al palacio.")
     WikiManager(fase1.wiki_dir).create_page(
-        "convocatoria", "La Convocatoria",
+        "convocatoria",
+        "La Convocatoria",
         "The king summons heroes to Luthadel before the new moon. [Fuente: module]",
     )
     fase2 = aventura.forge_child("fase-2", "El Bosque")
     fase2.meta_summary_path.write_text("Fase 2: cruce del bosque maldito.")
     WikiManager(fase2.wiki_dir).create_page(
-        "bosque", "El Bosque",
+        "bosque",
+        "El Bosque",
         "The cursed forest lies between the two cities. [Fuente: module]",
     )
 
@@ -112,13 +116,15 @@ def test_phase2_hierarchical_tap(tmp_minds_dir):
 
     # --- Query 1: scanner routes to fase-1 ---
     q1 = "¿Qué deben hacer los héroes en la fase 1?"
-    print(f"\nPregunta 1: \"{q1}\"")
+    print(f'\nPregunta 1: "{q1}"')
 
-    llm1 = MockLLM([
-        "<descend>\nfase-1\n</descend>",                                              # scanner
-        "PAGE: convocatoria",                                                         # retriever
-        "Los héroes deben viajar a Luthadel antes de la luna nueva. [Source: convocatoria]",  # answer
-    ])
+    llm1 = MockLLM(
+        [
+            "<descend>\nfase-1\n</descend>",  # scanner
+            "PAGE: convocatoria",  # retriever
+            "Los héroes deben viajar a Luthadel antes de la luna nueva. [Source: convocatoria]",  # answer
+        ]
+    )
     result1 = TapWorkflow([aventura], llm1).run(q1)
 
     chosen1 = _parse_descend(llm1._responses[0])
@@ -132,12 +138,14 @@ def test_phase2_hierarchical_tap(tmp_minds_dir):
 
     # --- Query 2: scanner says parent context is enough ---
     q2 = "¿Quiénes son los personajes principales?"
-    print(f"\nPregunta 2: \"{q2}\"")
+    print(f'\nPregunta 2: "{q2}"')
 
-    llm2 = MockLLM([
-        "<descend>\n</descend>",                                        # scanner → parent only
-        "Los personajes son Vin, Elend y Sazed. [Source: overview]",   # answer
-    ])
+    llm2 = MockLLM(
+        [
+            "<descend>\n</descend>",  # scanner → parent only
+            "Los personajes son Vin, Elend y Sazed. [Source: overview]",  # answer
+        ]
+    )
     result2 = TapWorkflow([aventura], llm2).run(q2)
 
     chosen2 = _parse_descend(llm2._responses[0])
@@ -171,17 +179,20 @@ def test_phase3_recursive_polish(tmp_minds_dir):
 
     aventura = CopperMind.forge("aventura", "Adventure module")
     WikiManager(aventura.wiki_dir).create_page(
-        "overview", "Overview",
+        "overview",
+        "Overview",
         "Three-phase adventure. Heroes: Vin, Elend, Sazed. [Fuente: overview]",
     )
     fase1 = aventura.forge_child("fase-1", "La Convocatoria")
     WikiManager(fase1.wiki_dir).create_page(
-        "convocatoria", "La Convocatoria",
+        "convocatoria",
+        "La Convocatoria",
         "Heroes summoned to Luthadel before the new moon. [Fuente: module]",
     )
     fase2 = aventura.forge_child("fase-2", "El Bosque")
     WikiManager(fase2.wiki_dir).create_page(
-        "bosque", "El Bosque",
+        "bosque",
+        "El Bosque",
         "Cursed forest between the two cities. Strange creatures. [Fuente: module]",
     )
 
@@ -189,10 +200,12 @@ def test_phase3_recursive_polish(tmp_minds_dir):
     print(aventura.format_tree())
 
     # Even calls = archivist lint report, odd calls = _meta summary
-    llm = MockLLM([
-        "# Informe de salud\n\n🔵 Wiki en buen estado.",
-        "Resumen generado para el scanner.",
-    ])
+    llm = MockLLM(
+        [
+            "# Informe de salud\n\n🔵 Wiki en buen estado.",
+            "Resumen generado para el scanner.",
+        ]
+    )
 
     result = PolishWorkflow(aventura, llm).run()
 
@@ -287,12 +300,16 @@ def test_phase4_store_routing(tmp_minds_dir, tmp_path):
 
     # --- Source 3: router proposes a new child ---
     src3 = tmp_path / "epilogo.md"
-    src3.write_text("# Epílogo\n\nTras derrotar al Lord Ruler, los héroes reconstruyen el Imperio.\n")
+    src3.write_text(
+        "# Epílogo\n\nTras derrotar al Lord Ruler, los héroes reconstruyen el Imperio.\n"
+    )
 
-    llm3 = MockLLM([
-        "<route>new_child:epilogo</route>\n<topic>Epílogo y reconstrucción del Imperio</topic>",
-        wiki_xml("epilogo"),
-    ])
+    llm3 = MockLLM(
+        [
+            "<route>new_child:epilogo</route>\n<topic>Epílogo y reconstrucción del Imperio</topic>",
+            wiki_xml("epilogo"),
+        ]
+    )
     result3 = StoreWorkflow(aventura, llm3).run(src3)
 
     print(f"\nFuente 3: '{src3.name}'")
@@ -366,11 +383,13 @@ def test_phase5_pdf_structural_detection(tmp_minds_dir, tmp_path, monkeypatch):
     src = tmp_path / "aventura.pdf"
     src.write_bytes(b"%PDF-1.4 fake")
 
-    llm = MockLLM([
-        cluster_response,    # structurer
-        wiki_xml("convocatoria"),  # archivist for fase-1
-        wiki_xml("bosque"),        # archivist for fase-2
-    ])
+    llm = MockLLM(
+        [
+            cluster_response,  # structurer
+            wiki_xml("convocatoria"),  # archivist for fase-1
+            wiki_xml("bosque"),  # archivist for fase-2
+        ]
+    )
     result = StoreWorkflow(aventura, llm).run(src)
 
     print(f"  [Calls total]: {llm._call_count}  (structurer + 2 archivists)")
@@ -520,3 +539,91 @@ def test_phase6_cli_ergonomics(tmp_minds_dir, tmp_path, monkeypatch):
     print(f"polish (sin --depth)   → max_depth={captured_polish['max_depth']} (recursivo)")
 
     print("\n✓ forge padre/hijo, list árbol, store flags, polish --depth — todo OK")
+
+
+# ------------------------------------------------------------------ #
+# Phase 6.5 — Deep structural polish                                  #
+# ------------------------------------------------------------------ #
+
+
+def test_phase65_deep_polish(tmp_minds_dir):
+    """
+    Deep polish reorganizes a two-child tree in three passes:
+
+    1. Mapper (per child) — LLM extracts entities from each child's wiki.
+    2. Reducer (parent) — LLM proposes a move + a transversal page.
+    3. Apply — page is moved; transversal page is synthesized; spine refreshed.
+
+    What we check:
+    - After apply, the moved page lives in the target child, not the source.
+    - A new transversal page appears in the parent.
+    - DeepPolishResult reports the correct counts.
+    - Dry-run leaves the tree unchanged.
+    """
+    from copper.core.coppermind import CopperMind
+    from copper.core.wiki import WikiManager
+    from copper.llm.mock import MockLLM
+    from copper.workflows.deep_polish import DeepPolishWorkflow
+
+    parent = CopperMind.forge("aventura", "Adventure module")
+    parte1 = parent.forge_child("parte-1", "La Convocatoria")
+    parte2 = parent.forge_child("parte-2", "El Viaje")
+
+    # Seed each child with pages
+    parte1.wiki.create_page("szeth", "Szeth", "Szeth-son-son-Vallano appears throughout.")
+    parte1.wiki.create_page("kaladin", "Kaladin", "Kaladin Stormblessed is the protagonist.")
+    parte1.wiki.create_page("misrouted", "Misrouted Page", "Content that belongs in parte-2.")
+    parte2.wiki.create_page("dalinar", "Dalinar", "Dalinar Kholin leads the war.")
+    parte2.wiki.create_page("szeth-arc", "Szeth Arc", "Szeth's arc continues here.")
+
+    # ── Dry-run: plan is produced, nothing changed ──
+    mapper1_dry = (
+        '<entities><entity name="Szeth" kind="character" pages="szeth,kaladin"/></entities>'
+    )
+    mapper2_dry = '<entities><entity name="Szeth" kind="character" pages="szeth-arc"/></entities>'
+    reducer_dry = (
+        "<plan>"
+        '<move slug="misrouted" from="parte-1" to="parte-2" reason="content fits parte-2"/>'
+        '<transversal entity="Szeth" kind="character" children="parte-1,parte-2" reason="spans both"/>'
+        "</plan>"
+    )
+    llm_dry = MockLLM([mapper1_dry, mapper2_dry, reducer_dry])
+    dry_result = DeepPolishWorkflow(parent, llm_dry).run(dry_run=True, auto_yes=True)
+
+    assert len(dry_result.plan.moves) == 1
+    assert len(dry_result.plan.transversals) == 1
+    assert dry_result.moves_applied == []
+    assert dry_result.transversals_applied == []
+    assert parte1.wiki.page("misrouted").exists(), "dry-run must not move pages"
+    assert not parent.wiki.page("szeth").exists(), "dry-run must not create transversals"
+
+    print("\n  [Dry-run] plan producido sin cambios en el árbol ✓")
+    print(f"    Movimientos propuestos: {[m.slug for m in dry_result.plan.moves]}")
+    print(f"    Transversales propuestos: {[t.entity for t in dry_result.plan.transversals]}")
+
+    # ── Full run: plan is applied ──
+    mapper1 = '<entities><entity name="Szeth" kind="character" pages="szeth,kaladin"/></entities>'
+    mapper2 = '<entities><entity name="Szeth" kind="character" pages="szeth-arc"/></entities>'
+    reducer = (
+        "<plan>"
+        '<move slug="misrouted" from="parte-1" to="parte-2" reason="content fits parte-2"/>'
+        '<transversal entity="Szeth" kind="character" children="parte-1,parte-2" reason="spans both"/>'
+        "</plan>"
+    )
+    synth_body = "## Szeth\n\nSzeth-son-son-Vallano is a central character across both parts."
+    spine_body = "## Overview\n\nParte-1 covers the Convocatoria; Parte-2 covers the Viaje."
+
+    llm = MockLLM([mapper1, mapper2, reducer, synth_body, spine_body])
+    result = DeepPolishWorkflow(parent, llm).run(dry_run=False, auto_yes=True)
+
+    print(f"\n  [Apply] movimientos aplicados: {result.pages_moved}")
+    print(f"  [Apply] transversales creados: {result.pages_created}")
+
+    assert result.pages_moved == 1
+    assert result.pages_created == 1
+    assert not parte1.wiki.page("misrouted").exists(), "page should have moved out of parte-1"
+    assert parte2.wiki.page("misrouted").exists(), "page should now be in parte-2"
+    assert parent.wiki.page("szeth").exists(), "transversal page should exist in parent"
+    assert parent.wiki.page("overview").exists(), "spine should be refreshed"
+
+    print("\n✓ Deep polish: movimiento aplicado, transversal creado, spine actualizado")

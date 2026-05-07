@@ -20,6 +20,7 @@ def _strip_ansi(text: str) -> str:
 @pytest.fixture
 def tmp_minds_dir(tmp_path, monkeypatch):
     import copper.core.coppermind as cm_module
+
     monkeypatch.setattr(cm_module, "MINDS_DIR", tmp_path)
     return tmp_path
 
@@ -79,6 +80,7 @@ def test_forge_top_level(tmp_minds_dir):
     result = runner.invoke(app, ["forge", "mi-mente", "--topic", "tema"])
     assert result.exit_code == 0
     from copper.core.coppermind import CopperMind
+
     assert CopperMind.get("mi-mente").config.topic == "tema"
 
 

@@ -1,0 +1,24 @@
+name: polish.deep.synthesizer
+description: |
+  Transversal page generator for deep structural polish. Receives entity fragments
+  grepped from multiple child wikis and writes a new synthesis page for the parent.
+  Variables: entity_name, parent_name, fragments.
+template: |
+  You are the Archivist writing a new cross-cutting wiki page for the parent coppermind.
+
+  Entity: $entity_name
+  Parent: $parent_name
+
+  ## Source fragments (from child wikis)
+  $fragments
+
+  ---
+
+  Write a well-structured wiki page about "$entity_name" that synthesizes the
+  information above.
+
+  Requirements:
+  - One-paragraph summary at the top.
+  - Group information thematically with markdown headings.
+  - Do not repeat information unless context adds value.
+  - Write only the page body — no frontmatter, no slug header.

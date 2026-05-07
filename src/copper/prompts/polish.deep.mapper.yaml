@@ -1,0 +1,29 @@
+name: polish.deep.mapper
+description: |
+  Per-child entity extraction for deep structural polish. Receives a listing of
+  a child coppermind's pages (slug + body preview) and returns the named entities
+  that appear in 2+ pages, in compact XML.
+  Variables: mind_name (child name), pages_listing.
+template: |
+  You are the Archivist extracting named entities from a child coppermind's wiki.
+
+  Child: $mind_name
+
+  ## Pages
+  $pages_listing
+
+  ---
+
+  List every significant entity (character, location, theme, concept, item) that
+  appears in TWO OR MORE pages of this wiki.
+
+  Respond ONLY with:
+  <entities>
+    <entity name="NAME" kind="character|location|theme|item|concept" pages="slug1,slug2"/>
+  </entities>
+
+  Rules:
+  - Only include entities mentioned in 2+ pages.
+  - "pages" lists the slugs (comma-separated, no spaces).
+  - If no entity qualifies, respond with: <entities/>
+  - No preamble, no explanation, only the XML block.

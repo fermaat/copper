@@ -78,14 +78,8 @@ class PolishWorkflow:
         meta_text = self._generate_meta(context)
         self.mind.meta_summary_path.write_text(meta_text)
 
-        total_tokens = (
-            response.tokens_used
-            + sum(r.tokens_used for r in children_results)
-        )
-        total_cost = (
-            response.cost_usd
-            + sum(r.cost_usd for r in children_results)
-        )
+        total_tokens = response.tokens_used + sum(r.tokens_used for r in children_results)
+        total_cost = response.cost_usd + sum(r.cost_usd for r in children_results)
 
         return PolishResult(
             mind_name=self.mind.name,
