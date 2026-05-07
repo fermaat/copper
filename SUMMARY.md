@@ -61,6 +61,7 @@ src/copper/
 
 **WikiManager** (`core/wiki.py`)
 - `upsert_page(slug, title, body)`, `page(slug)`, `all_pages()`
+- `move_page(slug, target_wiki)` — moves a page to another WikiManager (copy + delete)
 - `read_index()`, `update_index(content)`, `append_log(action, description)`
 - Pages have YAML frontmatter: title, created, last_updated, source_count, status
 
@@ -163,6 +164,15 @@ Resolution order: **per-mind `.copper/config.yaml` → workflow env var → gene
 - Phase 4 ✓ — PDF/Obsidian/PlainText ingest plugins, watchdog auto-ingest, smart PDF chunking
 - Phase 5 ✓ — multi-turn chat mode (stateless history, `/chat` + `/chat/stream` API, toggle UI)
 - Phase 6 ✓ — two-stage retrieval (assay: LLM index scan + keyword augment → AlloyRetriever), prompt YAML system, image describer for multimodal PDFs, tap personalities
+- Phase 7 (sub-copperminds) — in progress:
+  - Phase 1 ✓ — recursive CopperMind tree model (children, `forge_child`, `descendants`, `format_tree`)
+  - Phase 2 ✓ — hierarchical tap with LLM scanner (progressive disclosure, `<descend>` routing)
+  - Phase 3 ✓ — recursive bottom-up polish (children first, `_meta.md` per node)
+  - Phase 4 ✓ — store with LLM router (`<route>parent|child|new_child:name>`)
+  - Phase 5 ✓ — PDF structural detection (`PDFPlugin.detect_structure`, `ClusterInfo`, `StructureProposal`)
+  - Phase 6 ✓ — CLI ergonomics (`forge padre/hijo`, `store --no-route/--into/--flat`, `polish --depth`, `list` tree)
+  - Phase 6.5 ✓ — deep structural polish (`polish --deep`): map-reduce LLM reorganization, page moves, transversal synthesis, spine refresh
+  - Phase 7 — API + UI tree navigation (pending)
 
 ## Known technical debt
 

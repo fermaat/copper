@@ -590,6 +590,14 @@ def test_phase65_deep_polish(tmp_minds_dir):
     llm_dry = MockLLM([mapper1_dry, mapper2_dry, reducer_dry])
     dry_result = DeepPolishWorkflow(parent, llm_dry).run(dry_run=True, auto_yes=True)
 
+    def pages_in(mind):
+        return sorted(p.name for p in mind.wiki.all_pages())
+
+    print("\n  Árbol inicial:")
+    print(f"    aventura/parte-1/ → {pages_in(parte1)}")
+    print(f"    aventura/parte-2/ → {pages_in(parte2)}")
+    print(f"    aventura/         → {pages_in(parent)}")
+
     assert len(dry_result.plan.moves) == 1
     assert len(dry_result.plan.transversals) == 1
     assert dry_result.moves_applied == []
@@ -597,9 +605,12 @@ def test_phase65_deep_polish(tmp_minds_dir):
     assert parte1.wiki.page("misrouted").exists(), "dry-run must not move pages"
     assert not parent.wiki.page("szeth").exists(), "dry-run must not create transversals"
 
-    print("\n  [Dry-run] plan producido sin cambios en el árbol ✓")
-    print(f"    Movimientos propuestos: {[m.slug for m in dry_result.plan.moves]}")
-    print(f"    Transversales propuestos: {[t.entity for t in dry_result.plan.transversals]}")
+    m = dry_result.plan.moves[0]
+    t = dry_result.plan.transversals[0]
+    print("\n  [Dry-run] el reducer propuso:")
+    print(f"    MOVE       '{m.slug}'  {m.from_child} → {m.to_child}  ({m.reason})")
+    print(f"    TRANSVERSAL '{t.entity}' ({t.kind}) desde [{', '.join(t.source_children)}]  ({t.reason})")
+    print("  → árbol sin cambios (dry-run) ✓")
 
     # ── Full run: plan is applied ──
     mapper1 = '<entities><entity name="Szeth" kind="character" pages="szeth,kaladin"/></entities>'
@@ -616,9 +627,6 @@ def test_phase65_deep_polish(tmp_minds_dir):
     llm = MockLLM([mapper1, mapper2, reducer, synth_body, spine_body])
     result = DeepPolishWorkflow(parent, llm).run(dry_run=False, auto_yes=True)
 
-    print(f"\n  [Apply] movimientos aplicados: {result.pages_moved}")
-    print(f"  [Apply] transversales creados: {result.pages_created}")
-
     assert result.pages_moved == 1
     assert result.pages_created == 1
     assert not parte1.wiki.page("misrouted").exists(), "page should have moved out of parte-1"
@@ -626,4 +634,9 @@ def test_phase65_deep_polish(tmp_minds_dir):
     assert parent.wiki.page("szeth").exists(), "transversal page should exist in parent"
     assert parent.wiki.page("overview").exists(), "spine should be refreshed"
 
-    print("\n✓ Deep polish: movimiento aplicado, transversal creado, spine actualizado")
+    print("\n  [Apply] árbol resultante:")
+    print(f"    aventura/parte-1/ → {pages_in(parte1)}  (misrouted eliminada)")
+    print(f"    aventura/parte-2/ → {pages_in(parte2)}  (misrouted añadida)")
+    print(f"    aventura/         → {pages_in(parent)}  (szeth + overview nuevas)")
+    print(f"  → {result.pages_moved} página movida, {result.pages_created} transversal creada ✓")
+    print("\n✓ Deep polish completo: move, synthesis, spine refresh")
