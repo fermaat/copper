@@ -18,6 +18,14 @@ You feed Copper raw sources (articles, notes, transcripts, PDFs, Obsidian vaults
 
 Multiple copperminds can be **linked** so that a `tap` query draws from several wikis at once.
 
+Copperminds can also be **nested**: a parent coppermind contains child copperminds, each specialising in a sub-topic. The Archivist routes sources to the right child, and `tap` queries descend the tree to find the best answer.
+
+| Term | Meaning |
+|---|---|
+| **sub-coppermind** | A child coppermind nested inside a parent |
+| **forge child** | `copper forge parent/child` — creates a nested coppermind |
+| **deep polish** | Three-pass map-reduce that reorganises pages across the tree |
+
 ---
 
 ## Installation
@@ -65,6 +73,29 @@ copper polish ai-safety
 copper chat ai-safety
 ```
 
+### Hierarchical copperminds
+
+Nest copperminds to organise large knowledge domains into sub-topics:
+
+```bash
+# Create a parent with children
+copper forge cosmere --topic "Brandon Sanderson's Cosmere"
+copper forge cosmere/stormlight --topic "The Stormlight Archive"
+copper forge cosmere/mistborn   --topic "The Mistborn series"
+
+# Store a file — the Archivist routes it to the right child automatically
+copper store cosmere book.pdf
+
+# Query the tree — descends to find the best answer
+copper tap cosmere "Who is Dalinar Kholin?"
+
+# Audit the full tree
+copper polish cosmere --deep       # structural reorganisation across children
+copper polish cosmere --depth 2    # standard audit up to depth 2
+```
+
+Children are created at `~/.copper/minds/<parent>/children/<child>/` and are fully independent copperminds with their own raw/, wiki/, and .copper/ directories.
+
 Copperminds are stored in `~/.copper/minds/<name>/`. Set `COPPER_MINDS_DIR` to override.
 
 ---
@@ -73,8 +104,12 @@ Copperminds are stored in `~/.copper/minds/<name>/`. Set `COPPER_MINDS_DIR` to o
 
 ```
 copper forge <name> [--topic TEXT]              Create a coppermind
+copper forge <parent>/<child> [--topic TEXT]    Create a nested child coppermind
 copper store <name> <file> [--all]              Ingest a source (or all files in raw/)
-copper watch <name>                             Watch raw/ and auto-ingest new files
+  --no-route                                    Skip LLM routing, store directly into this mind
+  --into <child>                                Force routing to a specific child by name
+  --flat                                        Disable PDF structure detection (store flat)
+copper watch <name>                             Watch raw/ and auto-ingest (covers all descendants)
 copper tap <name|a,b|--all> <question>          Query one or more copperminds
   --save                                        Save the answer to outputs/
   --with-links                                  Include linked copperminds
@@ -82,7 +117,11 @@ copper tap <name|a,b|--all> <question>          Query one or more copperminds
 copper chat <name> [--with-links]               Interactive multi-turn REPL
   [--personality NAME]                          Personality for this session
 copper polish <name>                            Wiki health check
-copper list                                     List all copperminds
+  --depth N                                     Audit up to depth N (default: full tree)
+  --deep                                        Structural reorganisation: map-reduce across children
+  --dry-run                                     Show the reorganisation plan without applying it
+  --yes / -y                                    Apply all actions without prompting
+copper list                                     List all copperminds (tree view)
 copper status <name>                            Show stats for a coppermind
 copper link <a> <b>                             Link two copperminds
 copper unlink <a> <b>                           Remove a link
@@ -135,15 +174,16 @@ After all chunks are processed, a `polish` pass consolidates potential duplicate
 Drop files into `raw/` and let the Archivist process them automatically:
 
 ```bash
-# Terminal 1 — start the watcher
-copper watch ai-safety
+# Terminal 1 — start the watcher (covers the root mind + all descendants)
+copper watch cosmere
 
-# Terminal 2 (or Finder) — drop a file into raw/
-cp paper.pdf ~/.copper/minds/ai-safety/raw/
-# → Archivist picks it up, updates the wiki, prints the result
+# Terminal 2 (or Finder) — drop a file into any raw/ in the tree
+cp book.pdf ~/.copper/minds/cosmere/raw/
+cp chapter.md ~/.copper/minds/cosmere/children/stormlight/raw/
+# → Archivist picks each file up, updates the relevant wiki, prints the result
 ```
 
-Requires `pdm install -G watch`. The watcher polls for file-size stability before processing large files.
+Requires `pdm install -G watch`. The watcher monitors the root mind and every descendant concurrently. Files are polled for size stability before processing to handle slow copies.
 
 ---
 
@@ -162,11 +202,13 @@ The server starts at `http://127.0.0.1:8000` by default.
 
 ### Key endpoints
 
+`{name}` accepts slash-separated paths to reach child copperminds (e.g. `cosmere/stormlight`).
+
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/minds` | List all copperminds |
+| `GET` | `/minds` | List all copperminds (tree, includes children) |
 | `POST` | `/minds` | Forge a coppermind |
-| `GET` | `/minds/{name}` | Get stats |
+| `GET` | `/minds/{name}` | Get stats (`is_root`, `children` list) |
 | `DELETE` | `/minds/{name}` | Delete |
 | `POST` | `/minds/{name}/store` | Ingest a file (multipart upload) |
 | `POST` | `/minds/{name}/tap` | Ask a single question |
@@ -176,6 +218,7 @@ The server starts at `http://127.0.0.1:8000` by default.
 | `POST` | `/minds/{name}/polish` | Run a wiki audit |
 | `GET` | `/minds/{name}/wiki` | List wiki pages |
 | `GET` | `/minds/{name}/wiki/{slug}` | Get a page |
+| `PUT` | `/minds/{name}/wiki/{slug}` | Update a page body |
 | `POST` | `/minds/link` | Link two copperminds |
 | `DELETE` | `/minds/link` | Unlink two copperminds |
 | `GET` | `/minds/graph/all` | Full link graph |
@@ -270,11 +313,13 @@ Copperminds are stored in a host-mounted volume so they persist across container
 ~/.copper/minds/<name>/
 ├── raw/                  # Immutable source files (never modified by the Archivist)
 ├── wiki/                 # LLM-maintained wiki
-│   ├── index.md          # Table of contents
+│   ├── index.md          # Table of contents (also _meta.md for child nodes)
 │   ├── log.md            # Change log
 │   ├── lint-report-*.md  # Polish audit reports
 │   └── *.md              # Knowledge pages
 ├── outputs/              # Saved tap answers
+├── children/             # Nested child copperminds (each is a full coppermind)
+│   └── <child>/          # Same structure recursively
 └── .copper/
     ├── config.yaml       # Name, topic, linked minds, model override
     └── schema.md         # Archivist instructions (auto-generated, freely editable)
@@ -326,9 +371,10 @@ src/copper/
 │   ├── alloy.py          # AlloyRetriever: fuses multiple retriever results
 │   └── factory.py        # build_default_retriever() — wires the pipeline from Settings
 ├── workflows/
-│   ├── store.py          # Source → chunks → LLM → wiki pages (+ auto-polish)
-│   ├── tap.py            # Question → two-stage retrieval → LLM → answer
-│   └── polish.py         # Wiki audit → lint report
+│   ├── store.py          # Source → chunks → LLM router → wiki pages (+ auto-polish)
+│   ├── tap.py            # Question → two-stage retrieval → LLM → answer (recursive for trees)
+│   ├── polish.py         # Wiki audit → lint report (recursive for trees)
+│   └── deep_polish.py    # Map-reduce reorganisation: entity extraction → plan → apply moves
 ├── api/
 │   ├── app.py            # FastAPI factory
 │   ├── routes/           # minds, workflows

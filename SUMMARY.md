@@ -54,6 +54,7 @@ src/copper/
 **CopperMind** (`core/coppermind.py`)
 - `CopperMind.forge(name, topic)` — creates `~/.copper/minds/<name>/` with raw/, wiki/, outputs/, .copper/
 - `CopperMind.get(name)` — load existing
+- `.wiki` property — returns `WikiManager(self.wiki_dir)` (convenience accessor)
 - `CopperMind.resolve_many("a,b" | "--all")` — multi-mind resolution
 - `mind.link(other)` / `unlink(other)` / `linked_minds()` / `expand_with_links()`
 - `.config` → `CopperMindConfig` (name, topic, model, linked_minds); persisted as `.copper/config.yaml`
@@ -172,7 +173,7 @@ Resolution order: **per-mind `.copper/config.yaml` → workflow env var → gene
   - Phase 5 ✓ — PDF structural detection (`PDFPlugin.detect_structure`, `ClusterInfo`, `StructureProposal`)
   - Phase 6 ✓ — CLI ergonomics (`forge padre/hijo`, `store --no-route/--into/--flat`, `polish --depth`, `list` tree)
   - Phase 6.5 ✓ — deep structural polish (`polish --deep`): map-reduce LLM reorganization, page moves, transversal synthesis, spine refresh
-  - Phase 7 — API + UI tree navigation (pending)
+  - Phase 7 ✓ — API tree navigation (`GET /minds` includes children, `GET /minds/{parent}/{child}` path routing), HTMX sidebar shows nested tree, watch covers all descendants
 
 ## Known technical debt
 

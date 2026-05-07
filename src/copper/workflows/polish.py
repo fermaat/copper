@@ -109,7 +109,7 @@ class PolishWorkflow:
 
 def _build_polish_context(wiki: WikiManager) -> str:
     parts: list[str] = []
-    parts.append(f"### Índice\n{wiki.read_index()}")
+    parts.append(f"### Index\n{wiki.read_index()}")
     for page in wiki.all_pages():
         parts.append(f"### {page.name}\n{page.raw}")
     return "\n\n".join(parts)

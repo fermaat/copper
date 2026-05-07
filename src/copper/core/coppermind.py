@@ -370,7 +370,7 @@ class CopperMind:
 
         # Initialize index and log
         mind.index_path.write_text(
-            f"# Índice — {name}\n\n*La mentecobre está vacía. Almacena conocimiento con `copper store`.*\n"
+            f"# Index — {name}\n\n*This coppermind is empty. Store knowledge with `copper store`.*\n"
         )
         mind.log_path.write_text(f"# Log — {name}\n")
         mind.append_log("forge", f"Mentecobre '{name}' creada sobre el tema: {topic}")
@@ -421,66 +421,66 @@ def _default_schema(name: str, topic: str) -> str:
     return f"""\
 # Schema — {name}
 
-## Identidad
-Esta mentecobre almacena conocimiento sobre: **{topic}**
-Mantenida por el Archivista (LLM). El usuario aporta fuentes y hace preguntas.
+## Identity
+This coppermind stores knowledge about: **{topic}**
+Maintained by the Archivist (LLM). The user provides sources and asks questions.
 
-## Arquitectura
-- `raw/` contiene fuentes originales. **NUNCA modificar.**
-- `wiki/` es propiedad del Archivista. Aquí se compila el conocimiento.
-- `outputs/` almacena respuestas y análisis generados.
+## Architecture
+- `raw/` contains original sources. **NEVER modify.**
+- `wiki/` belongs to the Archivist. Compiled knowledge lives here.
+- `outputs/` stores generated answers and analyses.
 
-## Convenciones del wiki
-- Cada tema tiene su propio `.md` en `wiki/`
-- Cada página empieza con frontmatter YAML:
+## Wiki conventions
+- Each topic has its own `.md` in `wiki/`
+- Each page starts with YAML frontmatter:
   ```
   ---
-  title: [Nombre del tema]
-  created: [Fecha]
-  last_updated: [Fecha]
-  source_count: [Número de fuentes]
+  title: [Topic name]
+  created: [Date]
+  last_updated: [Date]
+  source_count: [Number of sources]
   status: draft | reviewed | needs_update
   ---
   ```
-- Referencias internas: `[[nombre-de-pagina]]`
-- Cada afirmación cita su fuente: `[Fuente: nombre-fichero]`
-- Contradicciones se marcan explícitamente:
-  > CONTRADICCIÓN: [afirmación vieja] vs [nueva] de [fuente]
+- Internal references: `[[page-name]]`
+- Every claim cites its source: `[Source: filename]`
+- Contradictions are marked explicitly:
+  > CONTRADICTION: [old claim] vs [new] from [source]
 
-## Index y Log
-- `wiki/index.md` lista todas las páginas por categoría con descripción de una línea
-- `wiki/log.md` es registro cronológico append-only
-- Formato de entrada: `## [YYYY-MM-DD] acción | Descripción`
+## Index and Log
+- `wiki/index.md` lists all pages by category with a one-line description
+- `wiki/log.md` is a chronological append-only log
+- Entry format: `## [YYYY-MM-DD] action | Description`
 
-## Workflow: Almacenar (store)
-Al procesar una nueva fuente:
-1. Leer el documento completo
-2. Crear o actualizar página resumen en `wiki/`
-3. Actualizar `wiki/index.md`
-4. Actualizar todas las páginas de entidades y conceptos relacionados
-5. Añadir backlinks desde páginas existentes al nuevo contenido
-6. Marcar contradicciones con contenido existente
-7. Añadir entrada en `wiki/log.md`
-8. Una fuente debe tocar entre 10-15 páginas del wiki
+## Workflow: Store
+When processing a new source:
+1. Read the full document
+2. Create or update a summary page in `wiki/`
+3. Update `wiki/index.md`
+4. Update all related entity and concept pages
+5. Add backlinks from existing pages to the new content
+6. Mark contradictions with existing content
+7. Add entry to `wiki/log.md`
+8. A source should touch between 10–15 wiki pages
 
-## Workflow: Extraer (tap)
-Al responder una pregunta:
-1. Leer `wiki/index.md` para identificar páginas relevantes
-2. Leer todas las páginas relevantes
-3. Sintetizar respuesta con citas `[Fuente: nombre-pagina]`
-4. Si la respuesta revela nuevas conexiones, ofrecerse a guardarla en el wiki
-5. Guardar respuestas valiosas en `outputs/`
+## Workflow: Tap
+When answering a question:
+1. Read `wiki/index.md` to identify relevant pages
+2. Read all relevant pages
+3. Synthesize an answer with citations `[Source: page-name]`
+4. If the answer reveals new connections, offer to save it in the wiki
+5. Save valuable answers to `outputs/`
 
-## Workflow: Pulir (polish)
-Comprobaciones de salud:
-- Contradicciones entre páginas
-- Afirmaciones obsoletas
-- Páginas huérfanas sin enlaces entrantes
-- Conceptos mencionados pero no explicados
-- Referencias cruzadas ausentes
-- Afirmaciones sin citar fuente
-Salida: `wiki/lint-report-[fecha].md` con severidades 🔴🟡🔵
+## Workflow: Polish
+Health checks:
+- Contradictions between pages
+- Outdated claims
+- Orphan pages with no incoming links
+- Concepts mentioned but not explained
+- Missing cross-references
+- Claims without source citation
+Output: `wiki/lint-report-[date].md` with severities 🔴🟡🔵
 
-## Áreas de enfoque
+## Focus areas
 - {topic}
 """

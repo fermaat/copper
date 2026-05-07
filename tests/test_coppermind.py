@@ -160,7 +160,7 @@ def test_forge_child_via_forge_parent_kwarg(tmp_minds_dir):
     child = CopperMind.forge("sub", "sub-módulo", parent=parent)
 
     assert len(parent.children()) == 1
-    assert child.parent.name == "mod"
+    assert child.parent.name == "mod"  # type: ignore[union-attr]
 
 
 def test_three_level_tree(tmp_minds_dir):
@@ -181,8 +181,8 @@ def test_three_level_tree(tmp_minds_dir):
     assert {d.name for d in desc} == {"child", "grandchild"}
 
     # Navigation up
-    assert grandchild.parent.name == "child"
-    assert grandchild.parent.parent.name == "root"
+    assert grandchild.parent.name == "child"  # type: ignore[union-attr]
+    assert grandchild.parent.parent.name == "root"  # type: ignore[union-attr]
     assert root.is_root is True
     assert child.is_root is False
     assert grandchild.is_root is False

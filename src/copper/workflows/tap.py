@@ -269,13 +269,13 @@ def _build_context(minds: list[CopperMind], selected: dict[str, list[str]]) -> s
         index = wiki.read_index()
         slugs = selected.get(mind.name, [])
 
-        parts.append(f"## Mentecobre: {mind.name} (tema: {mind.config.topic})")
-        parts.append(f"### Índice\n{index}")
+        parts.append(f"## Coppermind: {mind.name} (topic: {mind.config.topic})")
+        parts.append(f"### Index\n{index}")
 
         for slug in slugs:
             page = wiki.page(slug)
             if page.exists():
-                parts.append(f"### Página: {page.name}\n{page.raw}")
+                parts.append(f"### Page: {page.name}\n{page.raw}")
             else:
                 logger.warning(f"[tap] Page '{slug}' selected but not found in '{mind.name}'")
 
@@ -283,7 +283,7 @@ def _build_context(minds: list[CopperMind], selected: dict[str, list[str]]) -> s
             # Fallback: no pages selected — include all (rare, but safe)
             logger.warning(f"[tap] No pages selected for '{mind.name}', falling back to full wiki")
             for page in wiki.all_pages():
-                parts.append(f"### Página: {page.name}\n{page.raw}")
+                parts.append(f"### Page: {page.name}\n{page.raw}")
 
     return "\n\n".join(parts)
 

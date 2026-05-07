@@ -57,13 +57,13 @@ def test_phase1_tree_navigation(tmp_minds_dir):
     print(aventura.format_tree())
     all_desc = [d.name for d in aventura.descendants()]
     print(f"\naventura.descendants() → {all_desc}")
-    print(f"enc.parent.parent.name  → '{enc.parent.parent.name}'")
+    print(f"enc.parent.parent.name  → '{enc.parent.parent.name}'")  # type: ignore[union-attr]
     print(f"enc.meta_summary        → '{enc.meta_summary}' (nunca escrito)")
 
     assert aventura.is_root
     assert not fase1.is_root
-    assert fase1.parent.name == "aventura"
-    assert enc.parent.parent.name == "aventura"
+    assert fase1.parent.name == "aventura"  # type: ignore[union-attr]
+    assert enc.parent.parent.name == "aventura"  # type: ignore[union-attr]
     assert {c.name for c in aventura.children()} == {"fase-1", "fase-2"}
     assert {d.name for d in aventura.descendants()} == {"fase-1", "fase-2", "encuentro-inicial"}
     assert "Luthadel" in fase1.meta_summary
@@ -697,7 +697,9 @@ def test_phase7_api_tree_navigation(tmp_minds_dir):
     res = client.get("/minds/aventura/parte-1")
     assert res.status_code == 200
     child_data = res.json()
-    print(f"\n  GET /minds/aventura/parte-1 → {child_data['name']}  wiki_pages={child_data['wiki_pages']}")
+    print(
+        f"\n  GET /minds/aventura/parte-1 → {child_data['name']}  wiki_pages={child_data['wiki_pages']}"
+    )
     assert child_data["name"] == "parte-1"
     assert child_data["wiki_pages"] == 1
 
