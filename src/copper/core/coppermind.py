@@ -218,7 +218,11 @@ class CopperMind:
                     f"Linking '{self.name}' to '{other.name}' which is in the same tree "
                     "(ancestor/descendant). Tap behaviour is well-defined but unusual."
                 )
-            elif self.parent is not None and self.parent.path == other.parent.path if other.parent else False:
+            elif (
+                self.parent is not None and self.parent.path == other.parent.path
+                if other.parent
+                else False
+            ):
                 logger.warning(
                     f"Linking '{self.name}' to '{other.name}' which is in the same tree "
                     "(sibling). Tap behaviour is well-defined but unusual."

@@ -87,6 +87,13 @@ class Settings(CoreSettings):
     # Tap: maximum depth for recursive scanner descent in hierarchical copperminds.
     # At depth == copper_tap_max_depth the mind is treated as a leaf (retriever used).
     copper_tap_max_depth: int = 2
+    # Tap: if retrieval returns no slugs and the wiki exceeds this page count,
+    # raise TapFallbackError instead of silently loading everything into context.
+    copper_tap_fallback_max_pages: int = 50
+    # Tap: enable per-step timing via core_utils.Profiler (logged at INFO level).
+    copper_tap_profile: bool = False
+    # Tap: use legacy sequential descent instead of parallel (safety escape hatch).
+    copper_tap_legacy_sequential: bool = False
 
     # ── Prompts ─────────────────────────────────────────────────────
     # Optional directory with user-defined YAML prompt files that override

@@ -387,11 +387,11 @@ def test_phase5_pdf_structural_detection(tmp_minds_dir, tmp_path, monkeypatch):
 
     llm = MockLLM(
         [
-            cluster_response,       # structurer
+            cluster_response,  # structurer
             wiki_xml("convocatoria"),  # archivist for fase-1
-            "Meta.",                # regenerate_meta for fase-1
-            wiki_xml("bosque"),     # archivist for fase-2
-            "Meta.",                # regenerate_meta for fase-2
+            "Meta.",  # regenerate_meta for fase-1
+            wiki_xml("bosque"),  # archivist for fase-2
+            "Meta.",  # regenerate_meta for fase-2
         ]
     )
     result = StoreWorkflow(aventura, llm).run(src)
@@ -765,9 +765,7 @@ def test_fase_a1_copper_move(tmp_minds_dir, tmp_path):
     print(f"  Hijo wiki antes del move:  {[p.name for p in hijo.wiki.all_pages()]}")
 
     # copper move pagina-test --from padre --to padre/hijo
-    result = runner.invoke(
-        app, ["move", "pagina-test", "--from", "padre", "--to", "padre/hijo"]
-    )
+    result = runner.invoke(app, ["move", "pagina-test", "--from", "padre", "--to", "padre/hijo"])
     out = strip_ansi(result.output)
     print(f"\n  $ copper move pagina-test --from padre --to padre/hijo")
     print(f"  → exit {result.exit_code}")
@@ -795,9 +793,7 @@ def test_fase_a1_copper_move(tmp_minds_dir, tmp_path):
     # Error: slug collision in target
     hijo2.wiki.upsert_page("clash", "Clash", "ya existe")
     padre2.wiki.upsert_page("clash", "Clash", "en padre")
-    result_err = runner.invoke(
-        app, ["move", "clash", "--from", "padre", "--to", "padre/hijo"]
-    )
+    result_err = runner.invoke(app, ["move", "clash", "--from", "padre", "--to", "padre/hijo"])
     print(f"\n  $ copper move clash --from padre --to padre/hijo (colisión esperada)")
     print(f"  → exit {result_err.exit_code}  ({strip_ansi(result_err.output).strip()})")
     assert result_err.exit_code != 0
@@ -897,12 +893,14 @@ def test_fase_b_meta_refresh_after_store(tmp_minds_dir, tmp_path):
     hijo2 = next(c for c in padre.children() if c.name == "hijo")
     hijo2.meta_summary_path.write_text("Resumen hijo para el router.")  # seed meta for router
 
-    llm4 = MockLLM([
-        "<route>hijo</route>",    # router → hijo
-        wiki_xml("nota-routed"),  # archivist in hijo
-        "Meta hijo actualizada.", # regenerate_meta for hijo
-        "Meta padre actualizada.",# regenerate_meta for padre (has pages)
-    ])
+    llm4 = MockLLM(
+        [
+            "<route>hijo</route>",  # router → hijo
+            wiki_xml("nota-routed"),  # archivist in hijo
+            "Meta hijo actualizada.",  # regenerate_meta for hijo
+            "Meta padre actualizada.",  # regenerate_meta for padre (has pages)
+        ]
+    )
     result4 = StoreWorkflow(padre, llm4).run(src4)
 
     hijo_mtime_after = hijo.meta_summary_path.stat().st_mtime
@@ -1022,9 +1020,9 @@ def test_fase_a3_max_depth_per_mind(tmp_minds_dir):
     result = TapWorkflow([parent2], llm).run("¿qué hay aquí?")
 
     print(f"\n  Tap con max_depth=0 → minds_used={result.minds_used}")
-    assert result.minds_used == ["par"], (
-        f"Con max_depth=0 no debe descender al hijo; got {result.minds_used}"
-    )
+    assert result.minds_used == [
+        "par"
+    ], f"Con max_depth=0 no debe descender al hijo; got {result.minds_used}"
     print("  → solo el padre consultado, el hijo ignorado ✓")
 
     # Without per-mind override, global (2) is used — child IS reachable
@@ -1036,3 +1034,162 @@ def test_fase_a3_max_depth_per_mind(tmp_minds_dir):
     print(f"\n  Mente sin override: max_depth={solo.config.max_depth} (usa global) ✓")
 
     print("\n✓ max_depth per-mind: override funciona, round-trip YAML limpio")
+
+
+# ------------------------------------------------------------------ #
+# Fase C — Defensive fallback cap + profiler + parallel descent      #
+# ------------------------------------------------------------------ #
+
+
+def test_fase_c_tap_fallback_cap(tmp_minds_dir, monkeypatch):
+    """
+    C.1 — When the retriever returns no pages and the wiki exceeds
+    copper_tap_fallback_max_pages, TapFallbackError is raised instead
+    of silently loading the entire wiki into context.
+    When under the cap, the fallback loads all pages normally.
+    """
+    from copper.core.coppermind import CopperMind
+    from copper.core.wiki import WikiManager
+    from copper.llm.mock import MockLLM
+    from copper.workflows.tap import TapWorkflow, TapFallbackError
+
+    print("\n=== Fase C.1 — Fallback cap ===\n")
+
+    # Build a mind with 3 pages
+    mind = CopperMind.forge("grande", "large mind")
+    wiki = WikiManager(mind.wiki_dir)
+    for i in range(3):
+        wiki.create_page(f"pagina-{i}", f"Pagina {i}", f"Contenido {i}. [Fuente: src]")
+
+    print(f"  Wiki tiene {len(wiki.all_pages())} páginas")
+
+    # Cap below page count → fallback must raise
+    monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_fallback_max_pages", 2)
+    llm_over = MockLLM(["", "Respuesta."])  # empty retriever response
+    workflow_over = TapWorkflow([mind], llm_over)
+
+    try:
+        workflow_over.run("¿pregunta?")
+        assert False, "Debería haber lanzado TapFallbackError"
+    except TapFallbackError as e:
+        print(f"  TapFallbackError lanzado correctamente: {str(e)[:80]}")
+        assert "refrasea" in str(e).lower() or "cap" in str(e).lower()
+
+    # Cap above page count → fallback loads all pages silently
+    monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_fallback_max_pages", 10)
+    llm_under = MockLLM(["", "Respuesta fallback."])
+    result = TapWorkflow([mind], llm_under).run("¿pregunta?")
+    assert result.answer == "Respuesta fallback."
+
+    # All 3 pages appear in context
+    answer_ctx = llm_under.calls[-1][-1].content
+    for i in range(3):
+        assert f"pagina-{i}" in answer_ctx, f"pagina-{i} not in context"
+    print(f"  Fallback bajo cap: {len(wiki.all_pages())} páginas cargadas en contexto ✓")
+
+    print("\n✓ Fallback cap: error cuando excede, carga silenciosa cuando no")
+
+
+def test_fase_c_profiler_instrumentation(tmp_minds_dir, monkeypatch):
+    """
+    C.2 — With copper_tap_profile=True a real Profiler is created and the
+    tap run completes without error. With False a NullProfiler is used.
+    Both paths produce identical answers (the profiler is transparent).
+    """
+    from copper.core.coppermind import CopperMind
+    from copper.core.wiki import WikiManager
+    from copper.llm.mock import MockLLM
+    from copper.workflows.tap import TapWorkflow
+    from core_utils.profiler import Profiler, NullProfiler
+
+    print("\n=== Fase C.2 — Profiler instrumentation ===\n")
+
+    mind = CopperMind.forge("profiled", "topic")
+    WikiManager(mind.wiki_dir).create_page("info", "Info", "Contenido. [Fuente: src]")
+
+    # Profile enabled
+    monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_profile", True)
+    llm_prof = MockLLM(["PAGE: info", "Respuesta profiled."])
+    result_prof = TapWorkflow([mind], llm_prof).run("¿pregunta?")
+    assert result_prof.answer == "Respuesta profiled."
+    print("  Profile=True → respuesta correcta ✓")
+
+    # Profile disabled
+    monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_profile", False)
+    llm_null = MockLLM(["PAGE: info", "Respuesta null."])
+    result_null = TapWorkflow([mind], llm_null).run("¿pregunta?")
+    assert result_null.answer == "Respuesta null."
+    print("  Profile=False → respuesta correcta ✓")
+
+    print("\n✓ Profiler: ambos modos (Profiler/NullProfiler) funcionan sin errores")
+
+
+def test_fase_c_parallel_descent(tmp_minds_dir, monkeypatch):
+    """
+    C.3 — Parallel descent (copper_tap_legacy_sequential=False) processes
+    multiple children concurrently and returns the same result as the
+    sequential path. Unknown child names emitted by the scanner are skipped
+    with a warning instead of crashing.
+    """
+    from copper.core.coppermind import CopperMind
+    from copper.core.wiki import WikiManager
+    from copper.llm.mock import MockLLM
+    from copper.workflows.tap import TapWorkflow
+
+    print("\n=== Fase C.3 — Parallel descent ===\n")
+
+    # Build root with two children
+    root = CopperMind.forge("raiz", "root topic")
+    WikiManager(root.wiki_dir).create_page("top", "Top", "Overview. [Fuente: src]")
+    for name in ["alpha", "beta"]:
+        child = root.forge_child(name, f"topic {name}")
+        WikiManager(child.wiki_dir).create_page(
+            f"pag-{name}", f"Pag {name}", f"Content of {name}. [Fuente: src]"
+        )
+
+    # Parallel path
+    monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_legacy_sequential", False)
+    llm_par = MockLLM(
+        [
+            "<descend>\nalpha\nbeta\n</descend>",
+            "PAGE: pag-alpha",
+            "PAGE: pag-beta",
+            "Respuesta paralela.",
+        ]
+    )
+    result_par = TapWorkflow([root], llm_par).run("¿resumen?")
+    assert result_par.answer == "Respuesta paralela."
+    assert llm_par._call_count == 4
+    print(f"  Paralelo: {llm_par._call_count} llamadas LLM, respuesta correcta ✓")
+
+    # Sequential path — same tree, same responses
+    monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_legacy_sequential", True)
+    llm_seq = MockLLM(
+        [
+            "<descend>\nalpha\nbeta\n</descend>",
+            "PAGE: pag-alpha",
+            "PAGE: pag-beta",
+            "Respuesta secuencial.",
+        ]
+    )
+    result_seq = TapWorkflow([root], llm_seq).run("¿resumen?")
+    assert result_seq.answer == "Respuesta secuencial."
+    assert llm_seq._call_count == 4
+    print(f"  Secuencial: {llm_seq._call_count} llamadas LLM, respuesta correcta ✓")
+
+    # Unknown child name skipped (no crash)
+    monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_legacy_sequential", False)
+    llm_unknown = MockLLM(
+        [
+            "<descend>\nalpha\ngamma\n</descend>",  # gamma doesn't exist
+            "PAGE: pag-alpha",
+            "Respuesta sin gamma.",
+        ]
+    )
+    result_unk = TapWorkflow([root], llm_unknown).run("¿resumen?")
+    assert result_unk.answer == "Respuesta sin gamma."
+    print("  Hijo desconocido 'gamma' ignorado sin crash ✓")
+
+    print(
+        "\n✓ Descenso paralelo: correcto, equivalente al secuencial, robusto ante nombres inválidos"
+    )

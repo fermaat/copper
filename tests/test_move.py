@@ -66,9 +66,7 @@ def test_move_between_flat_minds(two_flat_minds):
 
 def test_move_from_parent_to_child(parent_child_minds):
     parent, child = parent_child_minds
-    result = runner.invoke(
-        app, ["move", "migrant", "--from", "padre", "--to", "padre/hijo"]
-    )
+    result = runner.invoke(app, ["move", "migrant", "--from", "padre", "--to", "padre/hijo"])
     out = _strip_ansi(result.output)
     assert result.exit_code == 0, out
 
@@ -105,9 +103,7 @@ def test_move_source_mind_missing(tmp_minds_dir):
     from copper.core.coppermind import CopperMind
 
     CopperMind.forge("beta", "beta")
-    result = runner.invoke(
-        app, ["move", "any-slug", "--from", "ghost", "--to", "beta"]
-    )
+    result = runner.invoke(app, ["move", "any-slug", "--from", "ghost", "--to", "beta"])
     assert result.exit_code != 0
     assert "ghost" in _strip_ansi(result.output)
 
@@ -117,9 +113,7 @@ def test_move_target_mind_missing(tmp_minds_dir):
 
     alpha = CopperMind.forge("alpha", "alpha")
     alpha.wiki.upsert_page("pg", "Pg", "body")
-    result = runner.invoke(
-        app, ["move", "pg", "--from", "alpha", "--to", "ghost"]
-    )
+    result = runner.invoke(app, ["move", "pg", "--from", "alpha", "--to", "ghost"])
     assert result.exit_code != 0
     assert "ghost" in _strip_ansi(result.output)
 
@@ -129,9 +123,7 @@ def test_move_slug_not_in_source(tmp_minds_dir):
 
     CopperMind.forge("alpha", "alpha")
     CopperMind.forge("beta", "beta")
-    result = runner.invoke(
-        app, ["move", "no-such-page", "--from", "alpha", "--to", "beta"]
-    )
+    result = runner.invoke(app, ["move", "no-such-page", "--from", "alpha", "--to", "beta"])
     assert result.exit_code != 0
     assert "no-such-page" in _strip_ansi(result.output)
 
@@ -143,9 +135,7 @@ def test_move_slug_collision_in_target(tmp_minds_dir):
     beta = CopperMind.forge("beta", "beta")
     alpha.wiki.upsert_page("clash", "Clash", "from alpha")
     beta.wiki.upsert_page("clash", "Clash", "already in beta")
-    result = runner.invoke(
-        app, ["move", "clash", "--from", "alpha", "--to", "beta"]
-    )
+    result = runner.invoke(app, ["move", "clash", "--from", "alpha", "--to", "beta"])
     assert result.exit_code != 0
     out = _strip_ansi(result.output)
     assert "clash" in out

@@ -149,8 +149,8 @@ class TestRoutedStore:
         llm = MockLLM(
             [
                 "<route>fase-1</route>",  # router → fase-1
-                self._wiki_xml(),         # archivist in fase-1
-                "Meta.",                  # regenerate_meta for fase-1 (parent wiki empty → skipped)
+                self._wiki_xml(),  # archivist in fase-1
+                "Meta.",  # regenerate_meta for fase-1 (parent wiki empty → skipped)
             ]
         )
         result = StoreWorkflow(parent, llm).run(source_file)
@@ -174,7 +174,7 @@ class TestRoutedStore:
             [
                 "<route>parent</route>",  # router → stay at parent
                 self._wiki_xml(),
-                "Meta.",                  # regenerate_meta for parent
+                "Meta.",  # regenerate_meta for parent
             ]
         )
         result = StoreWorkflow(parent, llm).run(source_file)
@@ -231,7 +231,9 @@ class TestRoutedStore:
         result = StoreWorkflow(parent, llm).run(source_file, into="fase-1")
 
         assert result.routed_to == "fase-1"
-        assert llm._call_count == 2  # child archivist + child meta (no router; parent wiki empty → skip)
+        assert (
+            llm._call_count == 2
+        )  # child archivist + child meta (no router; parent wiki empty → skip)
 
 
 # ------------------------------------------------------------------ #
@@ -593,3 +595,200 @@ class TestPolishWorkflow:
         # max_depth=0: only parent polished, child untouched
         assert not parent.children()[0].meta_summary_path.exists()
         assert llm._call_count == 2  # archivist + meta for parent only
+
+
+# ------------------------------------------------------------------ #
+# Tap — Fallback cap (C.1)                                           #
+# ------------------------------------------------------------------ #
+
+
+class TestTapFallbackCap:
+    def test_fallback_raises_when_wiki_exceeds_cap(self, tmp_minds_dir, monkeypatch):
+        from copper.core.coppermind import CopperMind
+        from copper.core.wiki import WikiManager
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow, TapFallbackError
+
+        mind = CopperMind.forge("grande", "big mind")
+        wiki = WikiManager(mind.wiki_dir)
+        for i in range(3):
+            wiki.create_page(f"page-{i}", f"Page {i}", f"Content {i}. [Fuente: src]")
+
+        monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_fallback_max_pages", 2)
+
+        # Retriever returns no slugs (empty response → no PAGE: markers)
+        llm = MockLLM(["", "Answer."])
+        workflow = TapWorkflow([mind], llm)
+
+        with pytest.raises(TapFallbackError, match="refrasea"):
+            workflow.run("¿pregunta?")
+
+    def test_fallback_loads_all_when_under_cap(self, tmp_minds_dir, monkeypatch):
+        from copper.core.coppermind import CopperMind
+        from copper.core.wiki import WikiManager
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        mind = CopperMind.forge("pequeña", "small mind")
+        wiki = WikiManager(mind.wiki_dir)
+        for i in range(2):
+            wiki.create_page(f"pg-{i}", f"Pg {i}", f"Content {i}. [Fuente: src]")
+
+        monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_fallback_max_pages", 5)
+
+        llm = MockLLM(["", "Respuesta fallback."])
+        workflow = TapWorkflow([mind], llm)
+        result = workflow.run("¿pregunta?")
+
+        assert result.answer == "Respuesta fallback."
+        # Both pages should appear in context (fallback loads all)
+        answer_content = llm.calls[-1][-1].content
+        assert "pg-0" in answer_content
+        assert "pg-1" in answer_content
+
+    def test_fallback_not_triggered_when_retriever_returns_pages(self, tmp_minds_dir):
+        from copper.core.coppermind import CopperMind
+        from copper.core.wiki import WikiManager
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        mind = CopperMind.forge("normal", "normal mind")
+        wiki = WikiManager(mind.wiki_dir)
+        wiki.create_page("info", "Info", "Content. [Fuente: src]")
+
+        llm = MockLLM(["PAGE: info", "Respuesta."])
+        workflow = TapWorkflow([mind], llm)
+        result = workflow.run("¿qué hay en info?")
+
+        assert result.answer == "Respuesta."
+        assert "info" in llm.calls[-1][-1].content
+
+
+# ------------------------------------------------------------------ #
+# Tap — Profiler instrumentation (C.2)                               #
+# ------------------------------------------------------------------ #
+
+
+class TestTapProfiler:
+    def test_profiler_enabled_runs_without_error(self, tmp_minds_dir, monkeypatch):
+        from copper.core.coppermind import CopperMind
+        from copper.core.wiki import WikiManager
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        mind = CopperMind.forge("profiled", "topic")
+        WikiManager(mind.wiki_dir).create_page("p", "P", "Content. [Fuente: src]")
+
+        monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_profile", True)
+
+        llm = MockLLM(["PAGE: p", "Respuesta."])
+        result = TapWorkflow([mind], llm).run("¿pregunta?")
+        assert result.answer == "Respuesta."
+
+    def test_profiler_disabled_runs_without_error(self, tmp_minds_dir, monkeypatch):
+        from copper.core.coppermind import CopperMind
+        from copper.core.wiki import WikiManager
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        mind = CopperMind.forge("noprofile", "topic")
+        WikiManager(mind.wiki_dir).create_page("p", "P", "Content. [Fuente: src]")
+
+        monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_profile", False)
+
+        llm = MockLLM(["PAGE: p", "Respuesta."])
+        result = TapWorkflow([mind], llm).run("¿pregunta?")
+        assert result.answer == "Respuesta."
+
+
+# ------------------------------------------------------------------ #
+# Tap — Parallel vs sequential descent (C.3)                         #
+# ------------------------------------------------------------------ #
+
+
+class TestTapParallelDescent:
+    def _make_hierarchical(self, names: list[str]):
+        from copper.core.coppermind import CopperMind
+        from copper.core.wiki import WikiManager
+
+        parent = CopperMind.forge("raiz", "root topic")
+        WikiManager(parent.wiki_dir).create_page("top", "Top", "Top info. [Fuente: src]")
+        for name in names:
+            child = parent.forge_child(name, f"topic {name}")
+            WikiManager(child.wiki_dir).create_page(
+                f"pag-{name}", f"Pag {name}", f"Content {name}. [Fuente: src]"
+            )
+        return parent
+
+    def test_parallel_returns_correct_answer(self, tmp_minds_dir, monkeypatch):
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_legacy_sequential", False)
+
+        parent = self._make_hierarchical(["alpha", "beta"])
+        llm = MockLLM(
+            [
+                "<descend>\nalpha\nbeta\n</descend>",
+                "PAGE: pag-alpha",
+                "PAGE: pag-beta",
+                "Respuesta paralela.",
+            ]
+        )
+        result = TapWorkflow([parent], llm).run("¿resumen?")
+        assert result.answer == "Respuesta paralela."
+        assert llm._call_count == 4
+
+    def test_sequential_returns_correct_answer(self, tmp_minds_dir, monkeypatch):
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_legacy_sequential", True)
+
+        parent = self._make_hierarchical(["alpha", "beta"])
+        llm = MockLLM(
+            [
+                "<descend>\nalpha\nbeta\n</descend>",
+                "PAGE: pag-alpha",
+                "PAGE: pag-beta",
+                "Respuesta secuencial.",
+            ]
+        )
+        result = TapWorkflow([parent], llm).run("¿resumen?")
+        assert result.answer == "Respuesta secuencial."
+        assert llm._call_count == 4
+
+    def test_parallel_unknown_child_skipped(self, tmp_minds_dir, monkeypatch):
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_legacy_sequential", False)
+
+        parent = self._make_hierarchical(["alpha"])
+        llm = MockLLM(
+            [
+                "<descend>\nalpha\ngamma\n</descend>",  # gamma doesn't exist
+                "PAGE: pag-alpha",
+                "Respuesta sin gamma.",
+            ]
+        )
+        result = TapWorkflow([parent], llm).run("¿resumen?")
+        assert result.answer == "Respuesta sin gamma."
+        assert llm._call_count == 3
+
+    def test_parallel_empty_scanner_response_uses_parent_only(self, tmp_minds_dir, monkeypatch):
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_legacy_sequential", False)
+
+        parent = self._make_hierarchical(["alpha"])
+        llm = MockLLM(
+            [
+                "<descend>\n</descend>",  # no children selected
+                "Respuesta solo padre.",
+            ]
+        )
+        result = TapWorkflow([parent], llm).run("¿resumen?")
+        assert result.answer == "Respuesta solo padre."
+        assert llm._call_count == 2

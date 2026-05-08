@@ -145,6 +145,9 @@ Common settings — see [`docs/configuration.md`](docs/configuration.md) for the
 | `COPPER_INGEST_PROVIDER` / `_MODEL` | _(empty)_ | Vision model for multimodal PDF ingest (empty = skip) |
 | `COPPER_TAP_PERSONALITY` | `tap.archivist` | Default tap personality (prompt name) |
 | `COPPER_TAP_MAX_DEPTH` | `2` | Global recursion cap for hierarchical tap; overridable per mind via `max_depth` in `.copper/config.yaml` |
+| `COPPER_TAP_FALLBACK_MAX_PAGES` | `50` | Max pages before raising `TapFallbackError` when retrieval returns nothing |
+| `COPPER_TAP_PROFILE` | `false` | Enable per-step timing via `core_utils.Profiler` (logged at INFO) |
+| `COPPER_TAP_LEGACY_SEQUENTIAL` | `false` | Force sequential child descent instead of parallel (safety escape hatch) |
 | `COPPER_USER_PROMPTS_DIR` | _(empty)_ | Folder of YAML prompts that override built-ins by name |
 | `COPPER_MINDS_DIR` | `~/.copper/minds` | Override for Docker: `/data/minds` |
 | `COPPER_OLLAMA_BASE_URL` | `http://localhost:11434` | Use `host.docker.internal` in Docker |
@@ -178,7 +181,8 @@ Resolution order: **per-mind `.copper/config.yaml` → workflow env var → gene
   - Phase 6 ✓ — CLI ergonomics (`forge padre/hijo`, `store --no-route/--into/--flat`, `polish --depth`, `list` tree)
   - Phase 6.5 ✓ — deep structural polish (`polish --deep`): map-reduce LLM reorganization, page moves, transversal synthesis, spine refresh
   - Phase 7 ✓ — API tree navigation (`GET /minds` includes children, `GET /minds/{parent}/{child}` path routing), HTMX sidebar shows nested tree, watch covers all descendants
+- Tech debt sprint ✓ — `copper move`, same-tree link warning, per-mind `max_depth`, `_meta.md` refresh after every store (`core/meta.py`), `TapFallbackError` cap, profiler instrumentation, parallel hierarchical descents (`ThreadPoolExecutor`)
 
 ## Known technical debt
 
-- **Tap context ceiling**: full wiki loaded per query if retrieval falls back — degrades at ~100+ pages. The `LLMRetriever` + `KeywordRetriever` pipeline mitigates this for most queries.
+- **Tap context ceiling**: guarded by `TapFallbackError` (raises when retrieval returns nothing and wiki exceeds `COPPER_TAP_FALLBACK_MAX_PAGES=50`). The `LLMRetriever` + `KeywordRetriever` pipeline covers most queries.

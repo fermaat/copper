@@ -32,7 +32,7 @@ from rich import print as rprint
 from copper.core.coppermind import CopperMind
 from copper.api.deps import get_ingest_describer, get_store_llm, get_tap_llm
 from copper.workflows.store import StoreResult, StoreWorkflow
-from copper.workflows.tap import TapWorkflow
+from copper.workflows.tap import TapFallbackError, TapWorkflow
 from copper.workflows.polish import PolishWorkflow
 from copper.workflows.deep_polish import DeepPolishWorkflow
 
@@ -245,7 +245,11 @@ def tap(
     with console.status(
         f"[cyan][copper]Tapping[/copper] [{mind_list}] — [copper]assaying[/copper] then forging answer...[/cyan]"
     ):
-        result = workflow.run(question, save_to_outputs=save)
+        try:
+            result = workflow.run(question, save_to_outputs=save)
+        except TapFallbackError as e:
+            console.print(f"[red]✗ {e}[/red]")
+            raise typer.Exit(1)
 
     console.print(
         Panel(

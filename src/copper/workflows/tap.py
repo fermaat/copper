@@ -12,11 +12,13 @@ this workflow.
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from core_utils.logger import logger
+from core_utils.profiler import NullProfiler, Profiler
 
 from copper.config import settings
 from copper.core.coppermind import CopperMind
@@ -29,9 +31,11 @@ if TYPE_CHECKING:
     pass
 
 
-# Default personality name used when nothing is set per-mind or per-request.
-# Actual text is loaded from the YAML identified by this name.
 DEFAULT_TAP_PERSONALITY = "tap.archivist"
+
+
+class TapFallbackError(RuntimeError):
+    """Raised when retrieval returns no pages and the wiki exceeds the fallback cap."""
 
 
 class TapWorkflow:
@@ -59,6 +63,7 @@ class TapWorkflow:
         mind: CopperMind,
         question: str,
         depth: int,
+        profiler: "Profiler | NullProfiler",
     ) -> tuple[list[CopperMind], dict[str, list[str]], int, float]:
         """Return (minds, selected_slugs, tokens, cost) with scanner-guided recursion.
 
@@ -72,7 +77,8 @@ class TapWorkflow:
         )
 
         if not mind.children() or depth >= max_depth:
-            retrieval = self.retriever.retrieve(question, [mind])
+            with profiler.step("retriever"):
+                retrieval = self.retriever.retrieve(question, [mind])
             return [mind], retrieval.selected, retrieval.tokens_used, retrieval.cost_usd
 
         children = mind.children()
@@ -83,7 +89,8 @@ class TapWorkflow:
             f"[tap] Hierarchical mind '{mind.name}' (depth {depth}): "
             f"scanning {len(children)} sub-copperminds..."
         )
-        scanner_resp = self._call_scanner(parent_context, children_info, question)
+        with profiler.step("scanner"):
+            scanner_resp = self._call_scanner(parent_context, children_info, question)
         total_tokens = scanner_resp.tokens_used
         total_cost = scanner_resp.cost_usd
 
@@ -96,20 +103,76 @@ class TapWorkflow:
 
         if selected_names:
             child_map = {c.name: c for c in children}
+            selected_children: list[tuple[str, CopperMind]] = []
             for name in selected_names:
-                child = child_map.get(name)
-                if child is None:
+                if name in child_map:
+                    selected_children.append((name, child_map[name]))
+                else:
                     logger.warning(f"[tap] Scanner selected unknown child '{name}', skipping")
-                    continue
-                child_minds, child_selected, child_tokens, child_cost = (
-                    self._gather_minds_and_pages(child, question, depth + 1)
+
+            if settings.copper_tap_legacy_sequential:
+                child_results = self._descend_sequential(
+                    selected_children, question, depth, profiler
                 )
+            else:
+                child_results = self._descend_parallel(selected_children, question, depth, profiler)
+
+            for child_minds, child_selected, child_tokens, child_cost in child_results:
                 all_minds.extend(child_minds)
                 all_selected.update(child_selected)
                 total_tokens += child_tokens
                 total_cost += child_cost
 
         return all_minds, all_selected, total_tokens, total_cost
+
+    def _descend_sequential(
+        self,
+        selected_children: list[tuple[str, CopperMind]],
+        question: str,
+        depth: int,
+        profiler: "Profiler | NullProfiler",
+    ) -> list[tuple[list[CopperMind], dict[str, list[str]], int, float]]:
+        """Recurse into each selected child one at a time (legacy path)."""
+        results = []
+        for name, child in selected_children:
+            with profiler.step(f"descend.{name}"):
+                result = self._gather_minds_and_pages(child, question, depth + 1, profiler)
+            results.append(result)
+        return results
+
+    def _descend_parallel(
+        self,
+        selected_children: list[tuple[str, CopperMind]],
+        question: str,
+        depth: int,
+        profiler: "Profiler | NullProfiler",
+    ) -> list[tuple[list[CopperMind], dict[str, list[str]], int, float]]:
+        """Recurse into selected children concurrently using a thread pool.
+
+        LLMBase.complete is synchronous, so ThreadPoolExecutor is used.
+        Each thread gets a NullProfiler to avoid stack corruption in the shared
+        Profiler; the outer profiler records the whole parallel block as one step.
+        Results are returned in scanner-selection order regardless of completion order.
+        """
+        if not selected_children:
+            return []
+        with profiler.step("descend_parallel"):
+            ordered: dict[str, tuple] = {}
+            with ThreadPoolExecutor(max_workers=len(selected_children)) as executor:
+                futures = {
+                    executor.submit(
+                        self._gather_minds_and_pages,
+                        child,
+                        question,
+                        depth + 1,
+                        NullProfiler(),
+                    ): name
+                    for name, child in selected_children
+                }
+                for future in as_completed(futures):
+                    name = futures[future]
+                    ordered[name] = future.result()
+        return [ordered[name] for name, _ in selected_children]
 
     def _call_scanner(
         self,
@@ -162,11 +225,14 @@ class TapWorkflow:
             recent = " ".join(m.content for m in history[-4:])
             retrieval_question = f"{recent} {question}"
         logger.info("[tap] Assaying the mentecobre to find relevant pages...")
+        profiler: Profiler | NullProfiler = (
+            Profiler() if settings.copper_tap_profile else NullProfiler()
+        )
         # Hierarchical path: single root mind with sub-copperminds uses scanner + recursion.
         # Linked minds (expand_with_links) are orthogonal to parent/child — kept flat.
         if len(self.minds) == 1 and self.minds[0].children():
             context_minds, selected, total_tokens, total_cost = self._gather_minds_and_pages(
-                self.minds[0], retrieval_question, depth=0
+                self.minds[0], retrieval_question, depth=0, profiler=profiler
             )
         else:
             retrieval = self.retriever.retrieve(retrieval_question, self.minds)
@@ -204,7 +270,8 @@ class TapWorkflow:
         for i, msg in enumerate(messages):
             preview = msg.content[:120].replace("\n", "↵")
             logger.info(f"[tap]   [{i}] {msg.role}: {preview!r} ({len(msg.content)} chars)")
-        response = self.llm.complete(messages)
+        with profiler.step("answer"):
+            response = self.llm.complete(messages)
         total_tokens += response.tokens_used
         total_cost += response.cost_usd
         logger.info(f"[tap] LLM responded ({response.tokens_used} tokens)")
@@ -284,9 +351,16 @@ def _build_context(minds: list[CopperMind], selected: dict[str, list[str]]) -> s
                 logger.warning(f"[tap] Page '{slug}' selected but not found in '{mind.name}'")
 
         if not slugs:
-            # Fallback: no pages selected — include all (rare, but safe)
+            # Fallback: no pages selected — include all (rare, but guarded by a cap).
+            all_pages = wiki.all_pages()
+            cap = settings.copper_tap_fallback_max_pages
+            if len(all_pages) > cap:
+                raise TapFallbackError(
+                    f"Retrieval returned no pages and the wiki has {len(all_pages)} pages — "
+                    f"refrasea la consulta o ajusta el index.md. (cap: {cap})"
+                )
             logger.warning(f"[tap] No pages selected for '{mind.name}', falling back to full wiki")
-            for page in wiki.all_pages():
+            for page in all_pages:
                 parts.append(f"### Page: {page.name}\n{page.raw}")
 
     return "\n\n".join(parts)

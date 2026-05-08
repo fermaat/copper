@@ -93,7 +93,6 @@ class PolishWorkflow:
         )
 
 
-
 def _build_polish_context(wiki: WikiManager) -> str:
     parts: list[str] = []
     parts.append(f"### Index\n{wiki.read_index()}")
