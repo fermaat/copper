@@ -642,3 +642,82 @@ def test_phase65_deep_polish(tmp_minds_dir):
     print(f"    aventura/         → {pages_in(parent)}  (szeth + overview nuevas)")
     print(f"  → {result.pages_moved} página movida, {result.pages_created} transversal creada ✓")
     print("\n✓ Deep polish completo: move, synthesis, spine refresh")
+
+
+# ------------------------------------------------------------------ #
+# Phase 7 — API tree navigation                                       #
+# ------------------------------------------------------------------ #
+
+
+def test_phase7_api_tree_navigation(tmp_minds_dir):
+    """
+    The REST API exposes the full coppermind tree and resolves child minds
+    via slash-separated paths.
+
+    Scenario: a two-level tree (aventura → parte-1, parte-2).
+    parte-1 has one wiki page.
+
+    What we check:
+    - GET /minds returns the tree with children nested under the parent.
+    - GET /minds/aventura/parte-1 resolves the child by path (200, correct name).
+    - GET /minds/aventura/parte-1/wiki lists the child's pages.
+    - GET /minds/aventura/parte-1/wiki/szeth reads the specific page.
+    - GET /minds/aventura/noexiste returns 404.
+    - Root minds have is_root=True; children have is_root=False.
+    """
+    from fastapi.testclient import TestClient
+
+    from copper.api.app import create_app
+    from copper.core.coppermind import CopperMind
+
+    parent = CopperMind.forge("aventura", "Adventure module")
+    parte1 = parent.forge_child("parte-1", "La Convocatoria")
+    parte2 = parent.forge_child("parte-2", "El Viaje")
+    parte1.wiki.create_page("szeth", "Szeth", "Szeth-son-son-Vallano.")
+
+    client = TestClient(create_app())
+
+    # ── GET /minds — tree includes children ──
+    res = client.get("/minds")
+    assert res.status_code == 200
+    data = res.json()
+    aventura = next(m for m in data if m["name"] == "aventura")
+    child_names = [c["name"] for c in aventura["children"]]
+
+    print("\n  GET /minds → árbol completo:")
+    print(f"    aventura  (is_root={aventura['is_root']})  children={child_names}")
+    for c in aventura["children"]:
+        print(f"      └─ {c['name']}  topic='{c['topic']}'  is_root={c['is_root']}")
+
+    assert aventura["is_root"] is True
+    assert set(child_names) == {"parte-1", "parte-2"}
+    assert all(c["is_root"] is False for c in aventura["children"])
+
+    # ── GET /minds/aventura/parte-1 — child resolved by path ──
+    res = client.get("/minds/aventura/parte-1")
+    assert res.status_code == 200
+    child_data = res.json()
+    print(f"\n  GET /minds/aventura/parte-1 → {child_data['name']}  wiki_pages={child_data['wiki_pages']}")
+    assert child_data["name"] == "parte-1"
+    assert child_data["wiki_pages"] == 1
+
+    # ── GET /minds/aventura/parte-1/wiki — child's page list ──
+    res = client.get("/minds/aventura/parte-1/wiki")
+    assert res.status_code == 200
+    pages = res.json()
+    print(f"  GET /minds/aventura/parte-1/wiki → {pages}")
+    assert "szeth" in pages
+
+    # ── GET /minds/aventura/parte-1/wiki/szeth — specific page ──
+    res = client.get("/minds/aventura/parte-1/wiki/szeth")
+    assert res.status_code == 200
+    page = res.json()
+    print(f"  GET .../wiki/szeth → slug='{page['slug']}'  body={page['body'][:40]!r}…")
+    assert page["slug"] == "szeth"
+
+    # ── 404 for unknown child ──
+    res = client.get("/minds/aventura/noexiste")
+    assert res.status_code == 404
+    print(f"  GET /minds/aventura/noexiste → {res.status_code} ✓")
+
+    print("\n✓ API tree: árbol anidado, rutas hijo por path, 404 correcto")
