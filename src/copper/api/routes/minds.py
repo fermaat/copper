@@ -28,8 +28,8 @@ router = APIRouter(prefix="/minds", tags=["minds"])
 
 @router.get("", response_model=list[MindSummary])
 def list_minds():
-    """List all copperminds."""
-    return [_to_summary(m) for m in CopperMind.list_all()]
+    """List all root copperminds with their full descendant tree."""
+    return [_to_tree(m) for m in CopperMind.list_all()]
 
 
 @router.post("", response_model=MindSummary, status_code=status.HTTP_201_CREATED)
@@ -39,7 +39,7 @@ def forge_mind(body: ForgeRequest):
         mind = CopperMind.forge(body.name, body.topic, body.model)
     except FileExistsError as e:
         raise HTTPException(status_code=409, detail=str(e))
-    return _to_summary(mind)
+    return _to_tree(mind)
 
 
 # ------------------------------------------------------------------ #
@@ -120,34 +120,20 @@ def get_graph():
 
 
 # ------------------------------------------------------------------ #
-# Individual mind routes — /{name} must come last                     #
+# Individual mind routes                                              #
+# Sub-routes (/{name:path}/wiki, etc.) MUST come before the          #
+# catch-all /{name:path} so Starlette's ordered matching works.      #
 # ------------------------------------------------------------------ #
 
 
-@router.get("/{name}", response_model=MindSummary)
-def get_mind(name: str):
-    """Get stats for a single coppermind."""
-    mind = _get_or_404(name)
-    return _to_summary(mind)
-
-
-@router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_mind(name: str):
-    """Delete a coppermind (irreversible)."""
-    import shutil
-
-    mind = _get_or_404(name)
-    shutil.rmtree(mind.path)
-
-
-@router.get("/{name}/wiki", response_model=list[str])
+@router.get("/{name:path}/wiki", response_model=list[str])
 def list_wiki_pages(name: str):
     """List all wiki page slugs for a coppermind."""
     mind = _get_or_404(name)
     return [p.stem for p in mind.wiki_pages()]
 
 
-@router.get("/{name}/images/{filename}")
+@router.get("/{name:path}/images/{filename}")
 def get_mind_image(name: str, filename: str):
     """Serve an image extracted during PDF ingestion.
 
@@ -167,7 +153,7 @@ def get_mind_image(name: str, filename: str):
     return FileResponse(image_path)
 
 
-@router.get("/{name}/wiki/{slug}")
+@router.get("/{name:path}/wiki/{slug}")
 def get_wiki_page(name: str, slug: str):
     """Read a specific wiki page. ``body`` is the markdown without frontmatter."""
     from copper.core.wiki import WikiManager
@@ -185,7 +171,7 @@ def get_wiki_page(name: str, slug: str):
     }
 
 
-@router.put("/{name}/wiki/{slug}")
+@router.put("/{name:path}/wiki/{slug}")
 def update_wiki_page(name: str, slug: str, request: WikiPageUpdateRequest):
     """Overwrite a wiki page body (frontmatter is preserved, last_updated refreshed)."""
     from copper.core.wiki import WikiManager
@@ -200,19 +186,46 @@ def update_wiki_page(name: str, slug: str, request: WikiPageUpdateRequest):
     return {"slug": slug, "body": page.body, "frontmatter": page.frontmatter}
 
 
+@router.delete("/{name:path}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_mind(name: str):
+    """Delete a coppermind (irreversible)."""
+    import shutil
+
+    mind = _get_or_404(name)
+    shutil.rmtree(mind.path)
+
+
+@router.get("/{name:path}", response_model=MindSummary)
+def get_mind(name: str):
+    """Get stats for a single coppermind (supports parent/child path)."""
+    mind = _get_or_404(name)
+    return _to_tree(mind)
+
+
 # ------------------------------------------------------------------ #
 # Helpers                                                             #
 # ------------------------------------------------------------------ #
 
 
 def _get_or_404(name: str) -> CopperMind:
+    """Resolve a mind by name or slash-separated path (e.g. 'parent/child')."""
     try:
-        return CopperMind.get(name)
+        parts = [p for p in name.split("/") if p]
+        mind = CopperMind.get(parts[0])
+        for part in parts[1:]:
+            children = {c.name: c for c in mind.children()}
+            if part not in children:
+                raise FileNotFoundError(
+                    f"No existe ninguna sub-mentecobre '{part}' bajo '{mind.name}'."
+                )
+            mind = children[part]
+        return mind
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
-def _to_summary(mind: CopperMind) -> MindSummary:
+def _to_tree(mind: CopperMind) -> MindSummary:
+    """Build a MindSummary with the full descendant tree attached."""
     stats = mind.stats()
     return MindSummary(
         name=stats["name"],
@@ -221,4 +234,6 @@ def _to_summary(mind: CopperMind) -> MindSummary:
         wiki_pages=stats["wiki_pages"],
         linked_minds=stats["linked_minds"],
         created=mind.config.created[:10],
+        is_root=mind.is_root,
+        children=[_to_tree(c) for c in mind.children()],
     )

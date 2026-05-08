@@ -264,3 +264,123 @@ class TestUI:
         assert res.status_code == 200
         assert "text/html" in res.headers["content-type"]
         assert b"COPPER" in res.content
+
+
+# ------------------------------------------------------------------ #
+# Phase 7 — tree API + child-mind routing                             #
+# ------------------------------------------------------------------ #
+
+
+class TestTreeAPI:
+    def test_list_includes_children(self, client, tmp_minds_dir):
+        from copper.core.coppermind import CopperMind
+
+        parent = CopperMind.forge("aventura", "Adventure")
+        parent.forge_child("parte-1", "La Convocatoria")
+        parent.forge_child("parte-2", "El Viaje")
+
+        res = client.get("/minds")
+        assert res.status_code == 200
+        data = res.json()
+        aventura = next(m for m in data if m["name"] == "aventura")
+        assert len(aventura["children"]) == 2
+        child_names = {c["name"] for c in aventura["children"]}
+        assert child_names == {"parte-1", "parte-2"}
+
+    def test_get_child_mind_by_path(self, client, tmp_minds_dir):
+        from copper.core.coppermind import CopperMind
+
+        parent = CopperMind.forge("aventura", "Adventure")
+        parent.forge_child("parte-1", "La Convocatoria")
+
+        res = client.get("/minds/aventura/parte-1")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["name"] == "parte-1"
+        assert data["topic"] == "La Convocatoria"
+        assert data["is_root"] is False
+
+    def test_get_child_wiki_pages_by_path(self, client, tmp_minds_dir):
+        from copper.core.coppermind import CopperMind
+
+        parent = CopperMind.forge("aventura", "Adventure")
+        child = parent.forge_child("parte-1", "La Convocatoria")
+        child.wiki.create_page("szeth", "Szeth", "Szeth content.")
+
+        res = client.get("/minds/aventura/parte-1/wiki")
+        assert res.status_code == 200
+        assert "szeth" in res.json()
+
+    def test_get_child_wiki_page_by_path(self, client, tmp_minds_dir):
+        from copper.core.coppermind import CopperMind
+
+        parent = CopperMind.forge("aventura", "Adventure")
+        child = parent.forge_child("parte-1", "La Convocatoria")
+        child.wiki.create_page("szeth", "Szeth", "Szeth content.")
+
+        res = client.get("/minds/aventura/parte-1/wiki/szeth")
+        assert res.status_code == 200
+        assert res.json()["slug"] == "szeth"
+
+    def test_unknown_child_returns_404(self, client, tmp_minds_dir):
+        from copper.core.coppermind import CopperMind
+
+        CopperMind.forge("aventura", "Adventure")
+        res = client.get("/minds/aventura/noexiste")
+        assert res.status_code == 404
+
+    def test_root_mind_is_root_true(self, client, tmp_minds_dir):
+        from copper.core.coppermind import CopperMind
+
+        CopperMind.forge("solo", "A lone mind")
+        res = client.get("/minds/solo")
+        assert res.status_code == 200
+        assert res.json()["is_root"] is True
+        assert res.json()["children"] == []
+
+
+# ------------------------------------------------------------------ #
+# Phase 7 — watch with descendants                                    #
+# ------------------------------------------------------------------ #
+
+
+class TestWatchDescendants:
+    def test_watch_schedules_all_descendants(self, tmp_minds_dir, monkeypatch):
+        """watch_raw_dir should schedule one observer per descendant raw dir."""
+        from copper.core.coppermind import CopperMind
+        from copper.llm.mock import MockLLM
+
+        parent = CopperMind.forge("aventura", "Adventure")
+        parent.forge_child("parte-1", "La Convocatoria")
+        parent.forge_child("parte-2", "El Viaje")
+
+        scheduled = []
+
+        class FakeObserver:
+            def schedule(self, handler, path, recursive=False):
+                scheduled.append(path)
+
+            def start(self):
+                pass
+
+            def is_alive(self):
+                return False
+
+            def stop(self):
+                pass
+
+            def join(self):
+                pass
+
+        # Observer is imported inside watch_raw_dir from watchdog.observers,
+        # so we patch it there.
+        import watchdog.observers as wo_module
+
+        monkeypatch.setattr(wo_module, "Observer", FakeObserver)
+
+        from copper.watch import watch_raw_dir
+
+        watch_raw_dir(parent, MockLLM([]))
+
+        # Root + 2 children = 3 raw dirs watched
+        assert len(scheduled) == 3

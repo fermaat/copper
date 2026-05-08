@@ -18,11 +18,21 @@
 
       <div class="nav-section"><span class="cosmere">Copperminds</span></div>
       <div id="mind-list">
-        {% for mind in minds %}
-        <div class="mind-item" onclick="selectMind('{{ mind.name }}')" id="nav-{{ mind.name }}">
+        {% macro render_mind(mind, path, depth) %}
+        <div class="mind-item mind-depth-{{ depth }}"
+             onclick="selectMind('{{ path }}')"
+             id="nav-{{ path }}"
+             style="padding-left: calc(0.75rem + {{ depth }}*1rem)">
+          {% if depth > 0 %}<span class="mind-tree-prefix">└─ </span>{% endif %}
           {{ mind.name }}
           <div class="mind-topic">{{ mind.config.topic }}</div>
         </div>
+        {% for child in mind.children() %}
+          {{ render_mind(child, path + '/' + child.name, depth + 1) }}
+        {% endfor %}
+        {% endmacro %}
+        {% for mind in minds %}
+          {{ render_mind(mind, mind.name, 0) }}
         {% else %}
         <div class="text-dim">No <span class="cosmere">copperminds</span> yet.</div>
         {% endfor %}
@@ -209,7 +219,8 @@
     // Decorate each sidebar mind item with a "🔗 N" badge if it has links.
     function _applySidebarBadges(graph) {
       for (const node of graph.nodes) {
-        const item = document.getElementById('nav-' + node.name);
+        // Sidebar ids use the full path; root minds have no slash prefix.
+        const item = document.querySelector(`[id="nav-${node.name}"]`);
         if (!item) continue;
         let badge = item.querySelector('.mind-link-badge');
         if (node.links.length > 0) {
@@ -239,7 +250,7 @@
     async function selectMind(name) {
       currentMind = name;
       document.querySelectorAll('.mind-item').forEach(el => el.classList.remove('active'));
-      const navEl = document.getElementById('nav-' + name);
+      const navEl = document.querySelector(`[id="nav-${name}"]`);
       if (navEl) navEl.classList.add('active');
 
       document.getElementById('empty-state').classList.add('hidden');

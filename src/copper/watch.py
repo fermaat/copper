@@ -108,20 +108,25 @@ def watch_raw_dir(
             "watchdog is required for auto-ingest.\n" "Install it with: pdm install -G watch"
         )
 
-    handler_obj = _RawDirHandler(mind, llm, on_result=on_result, on_error=on_error)
+    # Watch the root mind and every descendant — each has its own raw/ dir.
+    all_minds = [mind, *mind.descendants()]
 
     class _WatchdogBridge(FileSystemEventHandler):
+        def __init__(self, target_mind: CopperMind) -> None:
+            self._handler = _RawDirHandler(target_mind, llm, on_result=on_result, on_error=on_error)
+
         def on_created(self, event: FileCreatedEvent) -> None:  # type: ignore[override]
             if not event.is_directory:
-                handler_obj.process(Path(str(event.src_path)))
+                self._handler.process(Path(str(event.src_path)))
 
         def on_moved(self, event: FileMovedEvent) -> None:  # type: ignore[override]
-            # Handles files moved/renamed into raw/ (e.g., drag-and-drop on some OSes)
             if not event.is_directory:
-                handler_obj.process(Path(str(event.dest_path)))
+                self._handler.process(Path(str(event.dest_path)))
 
     observer = Observer()
-    observer.schedule(_WatchdogBridge(), str(mind.raw_dir), recursive=False)
+    for m in all_minds:
+        m.raw_dir.mkdir(parents=True, exist_ok=True)
+        observer.schedule(_WatchdogBridge(m), str(m.raw_dir), recursive=False)
     observer.start()
 
     try:

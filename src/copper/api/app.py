@@ -37,8 +37,8 @@ def create_app() -> FastAPI:
     async def ui(request: Request):
         from copper.core.coppermind import CopperMind
 
+        # Pass root minds; template calls .children() for nesting.
         minds_list = CopperMind.list_all()
-        # Starlette 1.0 API: request and context are separate args
         return templates.TemplateResponse(
             request=request,
             name="index.html",

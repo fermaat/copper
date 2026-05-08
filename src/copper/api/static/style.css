@@ -50,6 +50,8 @@ body {
   background: rgba(184,115,51,0.1); border-color: var(--copper-dark); color: var(--text);
 }
 .mind-item .mind-topic { font-size: 0.65rem; color: var(--text-dim); margin-top: 0.15rem; }
+.mind-item .mind-tree-prefix { color: var(--copper-dark); opacity: 0.5; font-size: 0.7rem; }
+.mind-depth-1, .mind-depth-2 { font-size: 0.75rem; }
 .mind-link-badge {
   position: absolute; top: 0.35rem; right: 0.5rem;
   font-size: 0.6rem; line-height: 1.1; color: var(--copper-light);

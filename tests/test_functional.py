@@ -609,7 +609,9 @@ def test_phase65_deep_polish(tmp_minds_dir):
     t = dry_result.plan.transversals[0]
     print("\n  [Dry-run] el reducer propuso:")
     print(f"    MOVE       '{m.slug}'  {m.from_child} → {m.to_child}  ({m.reason})")
-    print(f"    TRANSVERSAL '{t.entity}' ({t.kind}) desde [{', '.join(t.source_children)}]  ({t.reason})")
+    print(
+        f"    TRANSVERSAL '{t.entity}' ({t.kind}) desde [{', '.join(t.source_children)}]  ({t.reason})"
+    )
     print("  → árbol sin cambios (dry-run) ✓")
 
     # ── Full run: plan is applied ──

@@ -64,6 +64,11 @@ class MindSummary(BaseModel):
     wiki_pages: int
     linked_minds: list[str]
     created: str
+    is_root: bool = True
+    children: list["MindSummary"] = []
+
+
+MindSummary.model_rebuild()
 
 
 class StoreResponse(BaseModel):
