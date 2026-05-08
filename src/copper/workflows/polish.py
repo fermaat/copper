@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 from copper.core.coppermind import CopperMind
+from copper.core.meta import regenerate_meta
 from copper.core.wiki import WikiManager
 from copper.llm.base import LLMBase, Message
 from copper.prompts import render_prompt
@@ -75,8 +76,7 @@ class PolishWorkflow:
         self.mind.append_log("polish", f"Informe de salud generado → {report_path.name}")
 
         # --- Regenerate _meta.md for this mind ---
-        meta_text = self._generate_meta(context)
-        self.mind.meta_summary_path.write_text(meta_text)
+        regenerate_meta(self.mind, self.llm)
 
         total_tokens = response.tokens_used + sum(r.tokens_used for r in children_results)
         total_cost = response.cost_usd + sum(r.cost_usd for r in children_results)
@@ -92,19 +92,6 @@ class PolishWorkflow:
             meta_path=self.mind.meta_summary_path,
         )
 
-    def _generate_meta(self, context: str) -> str:
-        """Generate a fresh _meta.md summary for this mind."""
-        user_content = render_prompt(
-            "polish.meta",
-            mind_name=self.mind.name,
-            topic=self.mind.config.topic,
-            context=context,
-        )
-        messages = [
-            Message(role="system", content=render_prompt(_POLISH_SYSTEM_PROMPT)),
-            Message(role="user", content=user_content),
-        ]
-        return self.llm.complete(messages).text
 
 
 def _build_polish_context(wiki: WikiManager) -> str:

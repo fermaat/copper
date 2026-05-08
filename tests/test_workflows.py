@@ -47,7 +47,8 @@ class TestStoreWorkflow:
                 "<content>Los transformers usan atención. [Fuente: articulo.md]</content>"
                 "</page>"
                 "<index># Índice\n\n- [[transformers]] — Arquitectura transformer</index>"
-                "</wiki_updates>"
+                "</wiki_updates>",
+                "Meta summary.",  # regenerate_meta call after store
             ]
         )
         workflow = StoreWorkflow(mind, llm)
@@ -55,7 +56,7 @@ class TestStoreWorkflow:
 
         assert result.source == "articulo.md"
         assert "transformers" in result.pages_written
-        assert llm._call_count == 1
+        assert llm._call_count == 2  # archivist + meta
 
     def test_store_creates_wiki_page(self, mind, source_file):
         from copper.workflows.store import StoreWorkflow
@@ -131,11 +132,11 @@ class TestRoutedStore:
         from copper.workflows.store import StoreWorkflow
         from copper.llm.mock import MockLLM
 
-        llm = MockLLM([self._wiki_xml()])
+        llm = MockLLM([self._wiki_xml(), "Meta."])
         result = StoreWorkflow(mind, llm).run(source_file)
 
         assert result.routed_to is None
-        assert llm._call_count == 1  # archivist only — no router
+        assert llm._call_count == 2  # archivist + meta (no router — flat mind)
 
     def test_store_routes_to_child(self, tmp_minds_dir, source_file):
         from copper.core.coppermind import CopperMind
@@ -148,13 +149,14 @@ class TestRoutedStore:
         llm = MockLLM(
             [
                 "<route>fase-1</route>",  # router → fase-1
-                self._wiki_xml(),  # archivist in fase-1
+                self._wiki_xml(),         # archivist in fase-1
+                "Meta.",                  # regenerate_meta for fase-1 (parent wiki empty → skipped)
             ]
         )
         result = StoreWorkflow(parent, llm).run(source_file)
 
         assert result.routed_to == "fase-1"
-        assert llm._call_count == 2
+        assert llm._call_count == 3  # router + child archivist + child meta
         # Page landed in the child's wiki, not the parent's
         child = parent.children()[0]
         assert len(child.wiki_pages()) > 0
@@ -172,12 +174,13 @@ class TestRoutedStore:
             [
                 "<route>parent</route>",  # router → stay at parent
                 self._wiki_xml(),
+                "Meta.",                  # regenerate_meta for parent
             ]
         )
         result = StoreWorkflow(parent, llm).run(source_file)
 
         assert result.routed_to is None
-        assert llm._call_count == 2
+        assert llm._call_count == 3  # router + archivist + meta
         assert len(parent.wiki_pages()) > 0
 
     def test_store_router_creates_new_child(self, tmp_minds_dir, source_file):
@@ -192,12 +195,13 @@ class TestRoutedStore:
             [
                 "<route>new_child:fase-2</route>\n<topic>Segunda fase del módulo</topic>",
                 self._wiki_xml(),
+                "Meta.",  # regenerate_meta for new child (parent wiki empty → skipped)
             ]
         )
         result = StoreWorkflow(parent, llm).run(source_file)
 
         assert result.routed_to == "fase-2"
-        assert llm._call_count == 2
+        assert llm._call_count == 3  # router + child archivist + child meta
         child_names = {c.name for c in parent.children()}
         assert "fase-2" in child_names
 
@@ -209,11 +213,11 @@ class TestRoutedStore:
         parent = CopperMind.forge("padre", "adventure")
         parent.forge_child("fase-1", "first phase")
 
-        llm = MockLLM([self._wiki_xml()])
+        llm = MockLLM([self._wiki_xml(), "Meta."])
         result = StoreWorkflow(parent, llm).run(source_file, no_route=True)
 
         assert result.routed_to is None
-        assert llm._call_count == 1  # no router call
+        assert llm._call_count == 2  # archivist + meta (no router)
 
     def test_store_into_explicit_child(self, tmp_minds_dir, source_file):
         from copper.core.coppermind import CopperMind
@@ -223,11 +227,11 @@ class TestRoutedStore:
         parent = CopperMind.forge("padre", "adventure")
         parent.forge_child("fase-1", "first phase")
 
-        llm = MockLLM([self._wiki_xml()])
+        llm = MockLLM([self._wiki_xml(), "Meta."])
         result = StoreWorkflow(parent, llm).run(source_file, into="fase-1")
 
         assert result.routed_to == "fase-1"
-        assert llm._call_count == 1  # no router, direct to child
+        assert llm._call_count == 2  # child archivist + child meta (no router; parent wiki empty → skip)
 
 
 # ------------------------------------------------------------------ #
@@ -505,9 +509,11 @@ class TestPolishWorkflow:
         assert "polish" in log_content
 
     def test_polish_flat_creates_meta(self, mind):
+        from copper.core.wiki import WikiManager
         from copper.workflows.polish import PolishWorkflow
         from copper.llm.mock import MockLLM
 
+        WikiManager(mind.wiki_dir).create_page("info", "Info", "Content. [Fuente: src]")
         llm = MockLLM(["Informe.", "Meta summary of this mind."])
         result = PolishWorkflow(mind, llm).run()
 
@@ -573,11 +579,13 @@ class TestPolishWorkflow:
 
     def test_polish_max_depth_zero_skips_children(self, tmp_minds_dir):
         from copper.core.coppermind import CopperMind
+        from copper.core.wiki import WikiManager
         from copper.workflows.polish import PolishWorkflow
         from copper.llm.mock import MockLLM
 
         parent = CopperMind.forge("padre", "topic")
         parent.forge_child("hijo", "child topic")
+        WikiManager(parent.wiki_dir).create_page("info", "Info", "Parent content. [Fuente: src]")
 
         llm = MockLLM(["# Informe.", "Meta."])
         PolishWorkflow(parent, llm).run(max_depth=0)

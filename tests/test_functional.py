@@ -269,16 +269,16 @@ def test_phase4_store_routing(tmp_minds_dir, tmp_path):
     src1 = tmp_path / "convocatoria.md"
     src1.write_text("# La Convocatoria\n\nEl rey convoca a los héroes a Luthadel.\n")
 
-    llm1 = MockLLM(["<route>fase-1</route>", wiki_xml("convocatoria")])
+    llm1 = MockLLM(["<route>fase-1</route>", wiki_xml("convocatoria"), "Meta."])
     result1 = StoreWorkflow(aventura, llm1).run(src1)
 
     print(f"\nFuente 1: '{src1.name}'")
     print(f"  [Router] → '{result1.routed_to}'")
-    print(f"  [Calls]  {llm1._call_count}  (router + archivist)")
+    print(f"  [Calls]  {llm1._call_count}  (router + archivist + child meta)")
     print(f"  [Páginas escritas] {result1.pages_written} en '{result1.routed_to}'")
 
     assert result1.routed_to == "fase-1"
-    assert llm1._call_count == 2
+    assert llm1._call_count == 3  # router + child archivist + child meta
     assert len(fase1.wiki_pages()) > 0
     assert len(aventura.wiki_pages()) == 0
 
@@ -286,16 +286,16 @@ def test_phase4_store_routing(tmp_minds_dir, tmp_path):
     src2 = tmp_path / "personajes.md"
     src2.write_text("# Personajes\n\nVin, Elend y Sazed aparecen en todas las fases.\n")
 
-    llm2 = MockLLM(["<route>parent</route>", wiki_xml("personajes")])
+    llm2 = MockLLM(["<route>parent</route>", wiki_xml("personajes"), "Meta."])
     result2 = StoreWorkflow(aventura, llm2).run(src2)
 
     print(f"\nFuente 2: '{src2.name}'")
     print(f"  [Router] → '{result2.routed_to or 'padre (contenido transversal)'}'")
-    print(f"  [Calls]  {llm2._call_count}")
+    print(f"  [Calls]  {llm2._call_count}  (router + archivist + parent meta)")
     print(f"  [Páginas escritas] {result2.pages_written} en 'aventura'")
 
     assert result2.routed_to is None
-    assert llm2._call_count == 2
+    assert llm2._call_count == 3  # router + archivist + meta
     assert len(aventura.wiki_pages()) > 0
 
     # --- Source 3: router proposes a new child ---
@@ -308,19 +308,21 @@ def test_phase4_store_routing(tmp_minds_dir, tmp_path):
         [
             "<route>new_child:epilogo</route>\n<topic>Epílogo y reconstrucción del Imperio</topic>",
             wiki_xml("epilogo"),
+            "Meta.",  # regenerate_meta for new child (parent wiki has pages now → also refreshed)
+            "Meta.",  # regenerate_meta for parent (aventura now has pages from source 2)
         ]
     )
     result3 = StoreWorkflow(aventura, llm3).run(src3)
 
     print(f"\nFuente 3: '{src3.name}'")
     print(f"  [Router] → nuevo hijo '{result3.routed_to}' (forjado en el momento)")
-    print(f"  [Calls]  {llm3._call_count}")
+    print(f"  [Calls]  {llm3._call_count}  (router + archivist + child meta + parent meta)")
     child_names = {c.name for c in aventura.children()}
     print("  [Hijos ahora]")
     print(aventura.format_tree())
 
     assert result3.routed_to == "epilogo"
-    assert llm3._call_count == 2
+    assert llm3._call_count == 4  # router + child archivist + child meta + parent meta
     assert "epilogo" in child_names
 
     print("\n✓ Enrutamiento a hijo, a padre y creación de hijo nuevo — todos OK")
@@ -385,20 +387,22 @@ def test_phase5_pdf_structural_detection(tmp_minds_dir, tmp_path, monkeypatch):
 
     llm = MockLLM(
         [
-            cluster_response,  # structurer
+            cluster_response,       # structurer
             wiki_xml("convocatoria"),  # archivist for fase-1
-            wiki_xml("bosque"),  # archivist for fase-2
+            "Meta.",                # regenerate_meta for fase-1
+            wiki_xml("bosque"),     # archivist for fase-2
+            "Meta.",                # regenerate_meta for fase-2
         ]
     )
     result = StoreWorkflow(aventura, llm).run(src)
 
-    print(f"  [Calls total]: {llm._call_count}  (structurer + 2 archivists)")
+    print(f"  [Calls total]: {llm._call_count}  (structurer + 2 archivists + 2 metas)")
     print(f"  [Clusters]:    {result.structural_clusters}")
     print(f"  [Páginas]:     {result.pages_written}")
     print("\nÁrbol resultante:")
     print(aventura.format_tree())
 
-    assert llm._call_count == 3
+    assert llm._call_count == 5  # structurer + (archivist + meta) × 2 clusters
     assert result.structural_clusters == ["fase-1", "fase-2"]
     child_names = {c.name for c in aventura.children()}
     assert "fase-1" in child_names
@@ -800,6 +804,119 @@ def test_fase_a1_copper_move(tmp_minds_dir, tmp_path):
     assert padre2.wiki.page("clash").exists(), "Colisión no debe mover la página"
 
     print("\n✓ copper move: mover entre padre/hijo, logs en ambos, error en colisión")
+
+
+# ------------------------------------------------------------------ #
+# Fase B — _meta refresh tras store                                   #
+# ------------------------------------------------------------------ #
+
+
+def test_fase_b_meta_refresh_after_store(tmp_minds_dir, tmp_path):
+    """
+    After every successful store, _meta.md is regenerated without running polish.
+
+    Scenario:
+    - Store directly into a child (no routing) → child's _meta.md created.
+    - Store again → child's _meta.md mtime advances (refreshed, not appended).
+    - Store routed to a child via router → child _meta refreshed; parent _meta
+      refreshed too because the parent now has content from a previous store.
+    - Empty wiki guard: a mind with no pages never gets _meta written.
+    """
+    import time
+    from copper.core.coppermind import CopperMind
+    from copper.llm.mock import MockLLM
+    from copper.workflows.store import StoreWorkflow
+
+    def wiki_xml(slug):
+        return (
+            "<wiki_updates>"
+            f'<page slug="{slug}" title="{slug.title()}" action="create">'
+            f"<content>Contenido de {slug}. [Fuente: src]</content>"
+            "</page>"
+            f"<index># Índice\n\n- [[{slug}]]</index>"
+            "</wiki_updates>"
+        )
+
+    print("\n=== Fase B — _meta refresh tras store ===\n")
+
+    padre = CopperMind.forge("padre", "parent mind")
+    hijo = padre.forge_child("hijo", "child mind")
+
+    # --- Store 1: directly into hijo (no routing) ---
+    src1 = tmp_path / "nota1.md"
+    src1.write_text("# Nota inicial\n\nContenido de prueba.")
+
+    llm1 = MockLLM([wiki_xml("nota-inicial"), "Meta tras primer store."])
+    StoreWorkflow(hijo, llm1).run(src1, no_route=True)
+
+    assert hijo.meta_summary_path.exists(), "_meta.md debe existir tras el primer store"
+    mtime1 = hijo.meta_summary_path.stat().st_mtime
+    meta1 = hijo.meta_summary
+    print(f"  Store 1 → _meta creada: '{meta1[:40]}…'  mtime={mtime1:.3f}")
+    assert "Meta tras primer store" in meta1
+
+    # Empty wiki guard: padre still has no pages → no _meta written
+    assert not padre.meta_summary_path.exists(), "padre sin páginas no debe tener _meta"
+    print(f"  Padre sin páginas → _meta ausente ✓")
+
+    # --- Store 2: another note into hijo → mtime must advance ---
+    time.sleep(0.05)  # ensure filesystem mtime resolution
+    src2 = tmp_path / "nota2.md"
+    src2.write_text("# Segunda nota\n\nOtro contenido distinto.")
+
+    llm2 = MockLLM([wiki_xml("nota-dos"), "Meta actualizada tras segundo store."])
+    StoreWorkflow(hijo, llm2).run(src2, no_route=True)
+
+    mtime2 = hijo.meta_summary_path.stat().st_mtime
+    meta2 = hijo.meta_summary
+    print(f"  Store 2 → _meta actualizada: '{meta2[:40]}…'  mtime={mtime2:.3f}")
+    assert mtime2 > mtime1, "_meta.md debe haberse reescrito (mtime adelantado)"
+    assert "Meta actualizada" in meta2
+
+    # --- Store 3 into padre directly → padre gets _meta, hijo untouched ---
+    src3 = tmp_path / "nota-padre.md"
+    src3.write_text("# Nota padre\n\nContenido transversal.")
+
+    llm3 = MockLLM([wiki_xml("nota-padre"), "Meta del padre."])
+    StoreWorkflow(padre, llm3).run(src3, no_route=True)
+
+    assert padre.meta_summary_path.exists(), "padre con páginas debe tener _meta"
+    meta_padre = padre.meta_summary
+    print(f"  Store 3 (padre directo) → _meta padre: '{meta_padre[:40]}…'")
+    assert "Meta del padre" in meta_padre
+
+    # --- Store 4: routed via LLM router to hijo → hijo + padre both refreshed ---
+    src4 = tmp_path / "nota-routed.md"
+    src4.write_text("# Nota enrutada\n\nContenido que el router asigna al hijo.")
+
+    hijo_mtime_before = hijo.meta_summary_path.stat().st_mtime
+    padre_mtime_before = padre.meta_summary_path.stat().st_mtime
+    time.sleep(0.05)
+
+    # padre has children → routing kicks in
+    hijo2 = next(c for c in padre.children() if c.name == "hijo")
+    hijo2.meta_summary_path.write_text("Resumen hijo para el router.")  # seed meta for router
+
+    llm4 = MockLLM([
+        "<route>hijo</route>",    # router → hijo
+        wiki_xml("nota-routed"),  # archivist in hijo
+        "Meta hijo actualizada.", # regenerate_meta for hijo
+        "Meta padre actualizada.",# regenerate_meta for padre (has pages)
+    ])
+    result4 = StoreWorkflow(padre, llm4).run(src4)
+
+    hijo_mtime_after = hijo.meta_summary_path.stat().st_mtime
+    padre_mtime_after = padre.meta_summary_path.stat().st_mtime
+    print(f"\n  Store 4 (routed → hijo) → llm calls={llm4._call_count}")
+    print(f"  hijo _meta mtime: {hijo_mtime_before:.3f} → {hijo_mtime_after:.3f}")
+    print(f"  padre _meta mtime: {padre_mtime_before:.3f} → {padre_mtime_after:.3f}")
+
+    assert result4.routed_to == "hijo"
+    assert llm4._call_count == 4  # router + archivist + hijo_meta + padre_meta
+    assert hijo_mtime_after > hijo_mtime_before, "hijo _meta debe haberse refrescado"
+    assert padre_mtime_after > padre_mtime_before, "padre _meta debe haberse refrescado"
+
+    print("\n✓ _meta refrescada tras cada store — sin polish, sin esperar")
 
 
 # ------------------------------------------------------------------ #

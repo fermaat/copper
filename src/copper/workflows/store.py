@@ -17,6 +17,7 @@ from core_utils.logger import logger
 
 from copper.config import settings
 from copper.core.coppermind import CopperMind
+from copper.core.meta import regenerate_meta
 from copper.core.wiki import WikiManager
 from copper.ingest.registry import default_registry
 from copper.llm.base import LLMBase, Message
@@ -241,6 +242,9 @@ class StoreWorkflow:
         if target_mind is not self.mind:
             child_wf = StoreWorkflow(target_mind, self.llm, self.image_describer)
             child_result = child_wf.run(source_path, no_route=True)
+            # Child's _meta was refreshed by its own run(). Refresh parent so its
+            # summary reflects the child's new content.
+            regenerate_meta(self.mind, self.llm)
             return StoreResult(
                 source=child_result.source,
                 pages_written=child_result.pages_written,
@@ -351,7 +355,8 @@ class StoreWorkflow:
             f"[store] Done: '{source_name}' → {len(all_pages)} pages, {total_tokens} tokens"
         )
 
-        # After multi-ingot forging, run polish to consolidate duplicates and fix gaps
+        # After multi-ingot forging, run polish to consolidate duplicates and fix gaps.
+        # PolishWorkflow.run() calls regenerate_meta internally, so no extra call needed.
         if total_ingots > 1:
             logger.info(f"[store] Running consolidation polish ({len(all_pages)} wiki pages)...")
             from copper.workflows.polish import PolishWorkflow
@@ -363,6 +368,8 @@ class StoreWorkflow:
                 f"[store] Polish done → {len(polish_result.structural_issues)} structural issues, "
                 f"report at {polish_result.report_path.name}"
             )
+        else:
+            regenerate_meta(self.mind, self.llm)
 
         return StoreResult(
             source=source_name,

@@ -440,11 +440,11 @@ class TestPDFStructureDetection:
                 "</wiki_updates>"
             )
 
-        llm = MockLLM([wiki_xml("doc")])
+        llm = MockLLM([wiki_xml("doc"), "Meta."])
         result = StoreWorkflow(mind, llm).run(src)
 
-        # Structurer not invoked — only 1 LLM call (archivist)
-        assert llm._call_count == 1
+        # Structurer not invoked — archivist + meta = 2 calls
+        assert llm._call_count == 2
         assert result.structural_clusters is None
 
     def test_store_workflow_structure_detection_below_threshold(
@@ -479,8 +479,8 @@ class TestPDFStructureDetection:
                 "</wiki_updates>"
             )
 
-        llm = MockLLM([wiki_xml("doc")])
+        llm = MockLLM([wiki_xml("doc"), "Meta."])
         result = StoreWorkflow(mind, llm).run(src)
 
-        assert llm._call_count == 1
+        assert llm._call_count == 2  # archivist + meta
         assert result.structural_clusters is None

@@ -34,10 +34,12 @@ src/copper/
 │   ├── keyword.py       # KeywordRetriever — keyword matching against page slugs/titles (no LLM)
 │   ├── alloy.py         # AlloyRetriever — fuses multiple retrievers into one ordered list
 │   └── factory.py       # build_default_retriever() — LLMRetriever + KeywordRetriever via AlloyRetriever
+├── core/
+│   └── meta.py          # regenerate_meta(mind, llm) → Path — shared _meta.md helper (store + polish)
 ├── workflows/
-│   ├── store.py         # StoreWorkflow: source → chunks → LLM → XML wiki updates → auto-polish
+│   ├── store.py         # StoreWorkflow: source → chunks → LLM → XML wiki updates → _meta refresh → auto-polish
 │   ├── tap.py           # TapWorkflow: question (+ optional history) + wiki context → LLM → TapResult
-│   └── polish.py        # PolishWorkflow: structural checks + LLM audit → lint report
+│   └── polish.py        # PolishWorkflow: structural checks + LLM audit → lint report → _meta refresh
 ├── api/
 │   ├── app.py           # FastAPI application factory
 │   ├── routes/          # REST routes: minds (CRUD, wiki, links) + workflows (store, tap, polish)
@@ -94,7 +96,7 @@ src/copper/
 - `build_default_retriever(llm)` (`factory.py`) — wires LLM + keyword into an alloy from Settings
 
 **Workflows**
-- `StoreWorkflow(mind, llm).run(path)` → `registry.to_chunks()` → per-chunk LLM call (refreshes index between chunks) → `<wiki_updates>` XML → wiki pages → auto-polish if multi-chunk → `StoreResult`
+- `StoreWorkflow(mind, llm).run(path)` → `registry.to_chunks()` → per-chunk LLM call (refreshes index between chunks) → `<wiki_updates>` XML → wiki pages → `regenerate_meta` on success → auto-polish if multi-chunk → `StoreResult`
 - `TapWorkflow(minds, llm).run(question, history=None)` → retrieves relevant pages → builds context → appends optional prior turns → LLM → `TapResult`. `history` is a list of `Message(role, content)` for multi-turn chat.
 - `PolishWorkflow(mind, llm).run()` → structural checks (orphans, stubs, missing backlinks) + LLM audit → `wiki/lint-report-<date>.md`
 
