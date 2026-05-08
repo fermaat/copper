@@ -723,3 +723,199 @@ def test_phase7_api_tree_navigation(tmp_minds_dir):
     print(f"  GET /minds/aventura/noexiste → {res.status_code} ✓")
 
     print("\n✓ API tree: árbol anidado, rutas hijo por path, 404 correcto")
+
+
+# ------------------------------------------------------------------ #
+# Fase A.1 — copper move                                              #
+# ------------------------------------------------------------------ #
+
+
+def test_fase_a1_copper_move(tmp_minds_dir, tmp_path):
+    """
+    A page stored in a parent mind can be moved to a child via `copper move`.
+    Both wiki files and log entries reflect the move.
+    """
+    from typer.testing import CliRunner
+    from copper.cli import app
+    from copper.core.coppermind import CopperMind
+    from copper.llm.mock import MockLLM
+    from copper.workflows.store import StoreResult
+    import re
+
+    runner = CliRunner()
+
+    def strip_ansi(text):
+        return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+    print("\n=== Fase A.1 — copper move ===\n")
+
+    # Build parent + child
+    padre = CopperMind.forge("padre", "Parent mind")
+    hijo = padre.forge_child("hijo", "Child mind")
+
+    # Seed a page directly (no real LLM needed)
+    padre.wiki.upsert_page("pagina-test", "Pagina Test", "Contenido demo para mover.")
+    padre.wiki.update_index("# Índice\n\n- [[pagina-test]]")
+
+    print(f"  Padre wiki antes del move: {[p.name for p in padre.wiki.all_pages()]}")
+    print(f"  Hijo wiki antes del move:  {[p.name for p in hijo.wiki.all_pages()]}")
+
+    # copper move pagina-test --from padre --to padre/hijo
+    result = runner.invoke(
+        app, ["move", "pagina-test", "--from", "padre", "--to", "padre/hijo"]
+    )
+    out = strip_ansi(result.output)
+    print(f"\n  $ copper move pagina-test --from padre --to padre/hijo")
+    print(f"  → exit {result.exit_code}")
+    print(f"  → {out.strip()}")
+
+    assert result.exit_code == 0, out
+
+    padre2 = CopperMind.get("padre")
+    hijo2 = next(c for c in padre2.children() if c.name == "hijo")
+
+    after_padre = [p.name for p in padre2.wiki.all_pages()]
+    after_hijo = [p.name for p in hijo2.wiki.all_pages()]
+    print(f"\n  Padre wiki después: {after_padre}")
+    print(f"  Hijo wiki después:  {after_hijo}")
+
+    assert "pagina-test" not in after_padre, "La página debe haber salido del padre"
+    assert "pagina-test" in after_hijo, "La página debe estar en el hijo"
+
+    padre_log = padre2.log_path.read_text()
+    hijo_log = hijo2.log_path.read_text()
+    assert "pagina-test" in padre_log and "move" in padre_log
+    assert "pagina-test" in hijo_log and "move" in hijo_log
+    print("\n  Logs de padre e hijo registran el move ✓")
+
+    # Error: slug collision in target
+    hijo2.wiki.upsert_page("clash", "Clash", "ya existe")
+    padre2.wiki.upsert_page("clash", "Clash", "en padre")
+    result_err = runner.invoke(
+        app, ["move", "clash", "--from", "padre", "--to", "padre/hijo"]
+    )
+    print(f"\n  $ copper move clash --from padre --to padre/hijo (colisión esperada)")
+    print(f"  → exit {result_err.exit_code}  ({strip_ansi(result_err.output).strip()})")
+    assert result_err.exit_code != 0
+    assert padre2.wiki.page("clash").exists(), "Colisión no debe mover la página"
+
+    print("\n✓ copper move: mover entre padre/hijo, logs en ambos, error en colisión")
+
+
+# ------------------------------------------------------------------ #
+# Fase A.2 — linked minds × hierarchy warning                        #
+# ------------------------------------------------------------------ #
+
+
+def test_fase_a2_link_same_tree_warning(tmp_minds_dir):
+    """
+    Linking minds within the same tree (sibling or ancestor/descendant) emits
+    a warning; cross-tree links are silent. The link is always established.
+    """
+    from unittest.mock import patch
+    from copper.core.coppermind import CopperMind
+
+    print("\n=== Fase A.2 — linked minds × hierarchy warning ===\n")
+
+    root1 = CopperMind.forge("tree1", "first tree")
+    child_a = root1.forge_child("child-a", "first child")
+    child_b = root1.forge_child("child-b", "second child")
+    root2 = CopperMind.forge("tree2", "second tree")
+
+    # Cross-tree link — should be SILENT
+    with patch("copper.core.coppermind.logger") as mock_log:
+        root1.link(root2)
+    called_cross = mock_log.warning.called
+    print(f"  link tree1 ↔ tree2  (árboles distintos) → warning={called_cross}")
+    assert not called_cross, "No debe advertir en links entre árboles distintos"
+
+    # Reload to avoid stale config
+    root1 = CopperMind.get("tree1")
+    child_a = next(c for c in root1.children() if c.name == "child-a")
+    child_b = next(c for c in root1.children() if c.name == "child-b")
+
+    # Sibling link — must WARN
+    with patch("copper.core.coppermind.logger") as mock_log:
+        child_a.link(child_b)
+    called_sibling = mock_log.warning.called
+    print(f"  link child-a ↔ child-b (hermanos)        → warning={called_sibling}")
+    assert called_sibling, "Debe advertir en links entre hermanos"
+
+    # Reload
+    root1 = CopperMind.get("tree1")
+    child_a = next(c for c in root1.children() if c.name == "child-a")
+
+    # Parent-child link — must WARN
+    with patch("copper.core.coppermind.logger") as mock_log:
+        root1.link(child_a)
+    called_parent_child = mock_log.warning.called
+    print(f"  link tree1 ↔ child-a (padre-hijo)        → warning={called_parent_child}")
+    assert called_parent_child, "Debe advertir en links entre ancestro y descendiente"
+
+    # Confirm all three links exist despite warnings
+    root1 = CopperMind.get("tree1")
+    assert "tree2" in root1.config.linked_minds
+    assert "child-b" in next(c for c in root1.children() if c.name == "child-a").config.linked_minds
+    assert "child-a" in root1.config.linked_minds
+    print("\n  Todos los links establecidos correctamente a pesar de los warnings ✓")
+
+    print("\n✓ Cross-tree silencioso, same-tree (hermano/ancestro) advierte")
+
+
+# ------------------------------------------------------------------ #
+# Fase A.3 — max_depth per mind                                      #
+# ------------------------------------------------------------------ #
+
+
+def test_fase_a3_max_depth_per_mind(tmp_minds_dir):
+    """
+    A per-mind max_depth=0 prevents tap from descending into children,
+    overriding the global setting. A mind without max_depth uses the global.
+    """
+    from copper.core.coppermind import CopperMind
+    from copper.llm.mock import MockLLM
+    from copper.workflows.tap import TapWorkflow
+    import yaml
+
+    print("\n=== Fase A.3 — max_depth por mente ===\n")
+
+    # Build: parent with 1 child, child has a page
+    parent = CopperMind.forge("par", "parent mind")
+    child = parent.forge_child("kid", "child mind")
+    child.wiki.upsert_page("kid-page", "Kid Page", "Info in the child mind.")
+
+    # Verify config.yaml has NO max_depth key when unset
+    raw_config = yaml.safe_load(parent.config_path.read_text())
+    print(f"  config.yaml sin max_depth → claves: {list(raw_config.keys())}")
+    assert "max_depth" not in raw_config
+
+    # Set max_depth=0 on parent → tap must NOT descend into child
+    parent.config.max_depth = 0
+    parent.save_config()
+
+    raw_config2 = yaml.safe_load(parent.config_path.read_text())
+    print(f"  config.yaml con max_depth → max_depth={raw_config2['max_depth']}")
+    assert raw_config2["max_depth"] == 0
+
+    parent2 = CopperMind.get("par")
+    assert parent2.config.max_depth == 0
+
+    # Global default is 2, but per-mind is 0 → must not descend
+    llm = MockLLM(["respuesta sin descender"])
+    result = TapWorkflow([parent2], llm).run("¿qué hay aquí?")
+
+    print(f"\n  Tap con max_depth=0 → minds_used={result.minds_used}")
+    assert result.minds_used == ["par"], (
+        f"Con max_depth=0 no debe descender al hijo; got {result.minds_used}"
+    )
+    print("  → solo el padre consultado, el hijo ignorado ✓")
+
+    # Without per-mind override, global (2) is used — child IS reachable
+    # (just verify the config round-trips to None cleanly)
+    solo = CopperMind.forge("solo", "standalone")
+    assert solo.config.max_depth is None
+    raw_solo = yaml.safe_load(solo.config_path.read_text())
+    assert "max_depth" not in raw_solo
+    print(f"\n  Mente sin override: max_depth={solo.config.max_depth} (usa global) ✓")
+
+    print("\n✓ max_depth per-mind: override funciona, round-trip YAML limpio")

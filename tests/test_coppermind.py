@@ -235,3 +235,67 @@ def test_forge_child_duplicate_raises(tmp_minds_dir):
 
     with pytest.raises(FileExistsError):
         parent.forge_child("hijo", "otro subtema")
+
+
+# ------------------------------------------------------------------ #
+# A.3 — max_depth per mind                                           #
+# ------------------------------------------------------------------ #
+
+
+def test_max_depth_defaults_to_none(tmp_minds_dir):
+    from copper.core.coppermind import CopperMind
+
+    mind = CopperMind.forge("deep-test", "tema")
+    assert mind.config.max_depth is None
+
+
+def test_max_depth_round_trips_via_config(tmp_minds_dir):
+    from copper.core.coppermind import CopperMind
+
+    mind = CopperMind.forge("depth-mind", "tema")
+    mind.config.max_depth = 3
+    mind.save_config()
+
+    mind2 = CopperMind.get("depth-mind")
+    assert mind2.config.max_depth == 3
+
+
+def test_max_depth_none_not_written_to_yaml(tmp_minds_dir):
+    """When max_depth is None the key must be absent from config.yaml."""
+    from copper.core.coppermind import CopperMind
+    import yaml
+
+    mind = CopperMind.forge("no-depth", "tema")
+    data = yaml.safe_load(mind.config_path.read_text())
+    assert "max_depth" not in data
+
+
+def test_max_depth_written_when_set(tmp_minds_dir):
+    from copper.core.coppermind import CopperMind
+    import yaml
+
+    mind = CopperMind.forge("has-depth", "tema")
+    mind.config.max_depth = 5
+    mind.save_config()
+
+    data = yaml.safe_load(mind.config_path.read_text())
+    assert data["max_depth"] == 5
+
+
+def test_tap_respects_per_mind_max_depth(tmp_minds_dir):
+    """A per-mind max_depth of 0 must prevent descent even when children exist."""
+    from copper.core.coppermind import CopperMind
+    from copper.workflows.tap import TapWorkflow
+    from copper.llm.mock import MockLLM
+
+    parent = CopperMind.forge("par", "parent")
+    parent.forge_child("kid", "child")
+    parent.config.max_depth = 0
+    parent.save_config()
+
+    parent2 = CopperMind.get("par")
+    llm = MockLLM(["answer"])
+    workflow = TapWorkflow([parent2], llm)
+    result = workflow.run("question")
+    # With max_depth=0, the child must NOT be descended into.
+    assert result.minds_used == ["par"]

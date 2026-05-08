@@ -112,6 +112,7 @@ copper watch <name>                          # watchdog auto-ingest
 copper tap <name|names|--all> <q> [--save] [--with-links]
 copper chat <name> [--with-links]
 copper polish <name>
+copper move <slug> --from <mind> --to <mind>  # relocate a wiki page between minds
 copper list / status <name>
 copper link/unlink <a> <b> / graph
 copper serve [--host] [--port] [--reload]
@@ -141,6 +142,7 @@ Common settings — see [`docs/configuration.md`](docs/configuration.md) for the
 | `COPPER_TAP_PROVIDER` / `_MODEL` | _(empty)_ | Override for tap + chat |
 | `COPPER_INGEST_PROVIDER` / `_MODEL` | _(empty)_ | Vision model for multimodal PDF ingest (empty = skip) |
 | `COPPER_TAP_PERSONALITY` | `tap.archivist` | Default tap personality (prompt name) |
+| `COPPER_TAP_MAX_DEPTH` | `2` | Global recursion cap for hierarchical tap; overridable per mind via `max_depth` in `.copper/config.yaml` |
 | `COPPER_USER_PROMPTS_DIR` | _(empty)_ | Folder of YAML prompts that override built-ins by name |
 | `COPPER_MINDS_DIR` | `~/.copper/minds` | Override for Docker: `/data/minds` |
 | `COPPER_OLLAMA_BASE_URL` | `http://localhost:11434` | Use `host.docker.internal` in Docker |

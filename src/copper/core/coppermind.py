@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from core_utils.logger import logger
+
 from copper.config import settings
 
 if TYPE_CHECKING:
@@ -37,6 +39,8 @@ class CopperMindConfig:
     ingest_model: str = ""
     # Tap personality override — name of a prompt registered in copper.prompts.
     tap_personality: str = ""
+    # Per-mind recursion depth cap; None means fall back to the global setting.
+    max_depth: int | None = None
 
     def to_dict(self) -> dict:
         d: dict = {
@@ -61,6 +65,8 @@ class CopperMindConfig:
             d["ingest_model"] = self.ingest_model
         if self.tap_personality:
             d["tap_personality"] = self.tap_personality
+        if self.max_depth is not None:
+            d["max_depth"] = self.max_depth
         return d
 
     @classmethod
@@ -78,6 +84,7 @@ class CopperMindConfig:
             ingest_provider=data.get("ingest_provider", ""),
             ingest_model=data.get("ingest_model", ""),
             tap_personality=data.get("tap_personality", ""),
+            max_depth=data.get("max_depth", None),
         )
 
 
@@ -180,12 +187,42 @@ class CopperMind:
     # Linking                                                              #
     # ------------------------------------------------------------------ #
 
+    def _root(self) -> "CopperMind":
+        """Return the root ancestor of this mind (itself if already root)."""
+        node = self
+        while node.parent is not None:
+            node = node.parent
+        return node
+
     def link(self, other: "CopperMind") -> None:
-        """Establish a bidirectional link between this mind and another."""
+        """Establish a bidirectional link between this mind and another.
+
+        Links are bidirectional and may cross tree boundaries: a child may link
+        to its parent, a sibling, or any unrelated mind. All are well-defined but
+        same-tree links (ancestor/descendant or sibling) emit a warning because
+        they are unusual — tap already walks the hierarchy automatically.
+        """
         if other.name == self.name:
             raise ValueError("Una mentecobre no puede enlazarse consigo misma.")
         if not other.exists():
             raise FileNotFoundError(f"Mentecobre '{other.name}' no encontrada.")
+
+        # Warn if the link crosses within the same tree (unusual, but allowed).
+        self_root_path = self._root().path
+        other_root_path = other._root().path
+        if self_root_path == other_root_path:
+            self_descendants = {d.path for d in self.descendants()}
+            other_descendants = {d.path for d in other.descendants()}
+            if other.path in self_descendants or self.path in other_descendants:
+                logger.warning(
+                    f"Linking '{self.name}' to '{other.name}' which is in the same tree "
+                    "(ancestor/descendant). Tap behaviour is well-defined but unusual."
+                )
+            elif self.parent is not None and self.parent.path == other.parent.path if other.parent else False:
+                logger.warning(
+                    f"Linking '{self.name}' to '{other.name}' which is in the same tree "
+                    "(sibling). Tap behaviour is well-defined but unusual."
+                )
 
         # Reload configs fresh to avoid stale state
         self._config = self._load_config()
@@ -217,7 +254,12 @@ class CopperMind:
         self.append_log("unlink", f"Desenlazada de '{other.name}'")
 
     def linked_minds(self) -> list["CopperMind"]:
-        """Return all minds linked to this one (that still exist)."""
+        """Return all minds linked to this one (that still exist).
+
+        Links are bidirectional and may cross tree boundaries: a linked mind may
+        be a parent, sibling, descendant, or a completely unrelated mind. Deleted
+        minds are silently skipped.
+        """
         result = []
         for name in self.config.linked_minds:
             try:

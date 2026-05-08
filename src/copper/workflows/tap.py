@@ -65,7 +65,11 @@ class TapWorkflow:
         Flat path (no children, or depth cap reached): delegates to the retriever.
         Hierarchical path: scanner chooses children, recurses into each.
         """
-        max_depth = settings.copper_tap_max_depth
+        max_depth = (
+            mind.config.max_depth
+            if mind.config.max_depth is not None
+            else settings.copper_tap_max_depth
+        )
 
         if not mind.children() or depth >= max_depth:
             retrieval = self.retriever.retrieve(question, [mind])

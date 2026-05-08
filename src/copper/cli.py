@@ -8,6 +8,7 @@ Copper CLI — The Archivist's interface.
   chat     → Interactive session
   list     → List all copperminds
   status   → Stats for a coppermind
+  move     → Move a wiki page between two copperminds
   link     → Link two copperminds bidirectionally
   unlink   → Remove a link between copperminds
   graph    → Visualise the mind link graph
@@ -510,6 +511,62 @@ def unlink(
 
     console.print(
         f"[yellow]✓[/yellow] Enlace entre [cyan]{name_a}[/cyan] y [cyan]{name_b}[/cyan] eliminado."
+    )
+
+
+def _resolve_mind(name: str) -> CopperMind:
+    """Resolve a coppermind name, supporting parent/child slash notation."""
+    if "/" not in name:
+        return CopperMind.get(name)
+    parts = name.split("/")
+    mind = CopperMind.get(parts[0])
+    for part in parts[1:]:
+        child = next((c for c in mind.children() if c.name == part), None)
+        if child is None:
+            raise FileNotFoundError(
+                f"No existe ninguna sub-mentecobre '{part}' bajo '{mind.name}'."
+            )
+        mind = child
+    return mind
+
+
+@app.command()
+def move(
+    slug: Annotated[str, typer.Argument(help="Slug de la página a mover")],
+    from_mind: Annotated[str, typer.Option("--from", help="Mentecobre origen")],
+    to_mind: Annotated[str, typer.Option("--to", help="Mentecobre destino")],
+):
+    """📦  Move a wiki page between two copperminds."""
+    try:
+        source = _resolve_mind(from_mind)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    try:
+        target = _resolve_mind(to_mind)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    if not source.wiki.page(slug).exists():
+        console.print(f"[red]✗ La página '[bold]{slug}[/bold]' no existe en '{from_mind}'.[/red]")
+        raise typer.Exit(1)
+
+    if target.wiki.page(slug).exists():
+        console.print(
+            f"[red]✗ La página '[bold]{slug}[/bold]' ya existe en '{to_mind}'. "
+            "No se sobreescribe.[/red]"
+        )
+        raise typer.Exit(1)
+
+    source.wiki.move_page(slug, target.wiki)
+    source.append_log("move", f"Página '{slug}' movida → {target.name}")
+    target.append_log("move", f"Página '{slug}' recibida desde {source.name}")
+
+    console.print(
+        f"[green]✓[/green] [bold]{slug}[/bold] movida "
+        f"de [cyan]{from_mind}[/cyan] → [cyan]{to_mind}[/cyan]"
     )
 
 

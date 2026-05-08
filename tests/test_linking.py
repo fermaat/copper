@@ -199,3 +199,47 @@ class TestCrossMindTap:
         result = workflow.run("pregunta con links")
 
         assert set(result.minds_used) == {"alpha", "beta"}
+
+
+# ------------------------------------------------------------------ #
+# A.2 — Same-tree link warnings                                       #
+# ------------------------------------------------------------------ #
+
+
+class TestSameTreeLinkWarning:
+    def test_cross_tree_link_no_warning(self, two_minds):
+        """Linking two unrelated roots must not emit any warning."""
+        from unittest.mock import patch
+
+        alpha, beta = two_minds
+        with patch("copper.core.coppermind.logger") as mock_log:
+            alpha.link(beta)
+        mock_log.warning.assert_not_called()
+
+    def test_parent_child_link_warns(self, tmp_minds_dir):
+        """Linking a child to its parent emits a warning but still links."""
+        from unittest.mock import patch
+        from copper.core.coppermind import CopperMind
+
+        parent = CopperMind.forge("parent", "p")
+        child = parent.forge_child("child", "c")
+        with patch("copper.core.coppermind.logger") as mock_log:
+            parent.link(child)
+        mock_log.warning.assert_called_once()
+        assert "same tree" in mock_log.warning.call_args[0][0]
+        # Link still established
+        parent2 = CopperMind.get("parent")
+        assert "child" in parent2.config.linked_minds
+
+    def test_sibling_link_warns(self, tmp_minds_dir):
+        """Linking two siblings emits a warning but still links."""
+        from unittest.mock import patch
+        from copper.core.coppermind import CopperMind
+
+        parent = CopperMind.forge("root", "r")
+        child_a = parent.forge_child("child-a", "ca")
+        child_b = parent.forge_child("child-b", "cb")
+        with patch("copper.core.coppermind.logger") as mock_log:
+            child_a.link(child_b)
+        mock_log.warning.assert_called_once()
+        assert "same tree" in mock_log.warning.call_args[0][0]
