@@ -362,6 +362,7 @@ class StoreWorkflow:
         all_pages: list[str] = []
         total_tokens = 0
         total_cost = 0.0
+        carry_markers: list[str] = []
 
         for i, chunk in enumerate(chunks, 1):
             ingot_label = f"ingot {i}/{total_ingots}" if total_ingots > 1 else None
@@ -405,7 +406,37 @@ class StoreWorkflow:
             existing_before = {
                 slug: pre_llm_bodies[slug] for slug in pages if slug in pre_llm_bodies
             }
-            _inject_missing_visual_markers(chunk, pages, self.wiki, existing_before)
+            unplaced = _inject_missing_visual_markers(
+                chunk, pages, self.wiki, existing_before, carry_markers
+            )
+
+            is_last_ingot = i == total_ingots
+            if unplaced and not is_last_ingot:
+                # Cap the buffer to avoid pathological growth.
+                if len(unplaced) > _CARRY_MARKER_CAP:
+                    dropped = unplaced[_CARRY_MARKER_CAP:]
+                    unplaced = unplaced[:_CARRY_MARKER_CAP]
+                    for m in dropped:
+                        label = _marker_short_label(m)
+                        logger.warning(f"[store] Carry-over buffer full — dropping marker: {label}")
+                carry_markers = unplaced
+                logger.info(f"[store] Carry-over: {len(unplaced)} marker(s) deferred to next ingot")
+            elif unplaced and is_last_ingot:
+                # Last ingot: any remaining unplaced markers are genuinely homeless.
+                for marker in unplaced:
+                    m_id = _marker_id(marker)
+                    label = _marker_short_label(marker)
+                    logger.warning(
+                        f"[store] Dropping orphan marker {m_id}: {label} "
+                        f"(LLM wrote pages: {sorted(pages)}). "
+                        "No page scored above the placement-confidence floor — "
+                        "the marker's subject was likely merged into another page "
+                        "or omitted entirely. Inspect the listed pages and re-run "
+                        "polish to surface the gap."
+                    )
+            else:
+                carry_markers = []
+
             logger.info(
                 f"[store] Ingot {i}/{total_ingots} forged: {len(pages)} page(s) written → {pages}"
             )
@@ -544,25 +575,33 @@ def _marker_short_label(marker: str) -> str:
     return f'"{name}"{suffix}'
 
 
+_CARRY_MARKER_CAP = 20
+
+
 def _inject_missing_visual_markers(
     chunk: str,
     page_slugs: list[str],
     wiki: WikiManager,
     existing_before: dict[str, str] | None = None,
-) -> None:
+    carry_markers: list[str] | None = None,
+) -> list[str]:
     """Safety net for visual markers after the LLM has written its pages.
 
-    Two responsibilities, in order:
+    Three responsibilities, in order:
     1. Restore markers that existed in a page BEFORE the LLM update but
        disappeared from its rewritten body.
-    2. Inject any chunk markers the LLM omitted entirely, scored against the
-       touched pages.
+    2. Inject markers the LLM omitted: carry-over from previous ingots first,
+       then this chunk's own markers, scored against the touched pages.
+    3. Return a list of markers that could not be placed — the caller carries
+       these forward to the next ingot's marker pool.
 
-    Each affected page is written at most once, regardless of how many
-    markers were restored or injected on it.
+    Each affected page is written at most once.
     """
+    chunk_markers = _extract_visual_markers(chunk)
+    all_candidates = list(carry_markers or []) + chunk_markers
+
     if not page_slugs:
-        return
+        return all_candidates
 
     # Read the current (post-LLM) body of every touched page that exists.
     bodies: dict[str, str] = {}
@@ -571,7 +610,7 @@ def _inject_missing_visual_markers(
         if p.exists():
             bodies[slug] = p.body
     if not bodies:
-        return
+        return all_candidates
 
     dirty: set[str] = set()
 
@@ -594,30 +633,20 @@ def _inject_missing_visual_markers(
             bodies[slug] = bodies[slug].rstrip() + "\n\n" + "\n\n".join(lost) + "\n"
             dirty.add(slug)
 
-    # 2. Inject orphan markers from the current chunk — but only when the
-    #    semantic match is confident. Below the threshold we drop the marker;
-    #    a missing image is preferable to an image attached to the wrong
-    #    subject. Polish can flag the gap later.
-    chunk_markers = _extract_visual_markers(chunk)
-    if chunk_markers:
+    # 2. Inject markers: carry-over from previous ingots + this chunk's own.
+    #    Unplaced markers are returned for carry-over to the next ingot.
+    unplaced: list[str] = []
+    if all_candidates:
         present_ids = {
             _marker_id(m) for body in bodies.values() for m in _extract_visual_markers(body)
         }
-        for marker in chunk_markers:
+        for marker in all_candidates:
             m_id = _marker_id(marker)
             if m_id in present_ids:
                 continue
             best_slug = _pick_best_slug(marker, bodies)
             if best_slug is None:
-                label = _marker_short_label(marker)
-                logger.warning(
-                    f"[store] Dropping orphan marker {m_id}: {label} "
-                    f"(LLM wrote pages: {sorted(bodies.keys())}). "
-                    "No page scored above the placement-confidence floor — "
-                    "the marker's subject was likely merged into another page "
-                    "or omitted entirely. Inspect the listed pages and re-run "
-                    "polish to surface the gap."
-                )
+                unplaced.append(marker)
                 continue
             logger.info(f"[store] Injecting orphan marker {m_id} into '{best_slug}'")
             bodies[best_slug] = bodies[best_slug].rstrip() + "\n\n" + marker + "\n"
@@ -627,6 +656,8 @@ def _inject_missing_visual_markers(
     # 3. Persist each modified page exactly once.
     for slug in dirty:
         wiki.update_page(slug, bodies[slug])
+
+    return unplaced
 
 
 # ---------------------------------------------------------------------- #

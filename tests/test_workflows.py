@@ -1001,3 +1001,211 @@ class TestOrphanMarkerLog:
         msg = orphan_warnings[0]
         assert "Yu-Thorak" in msg
         assert "yu-thorak" in msg
+
+
+# ------------------------------------------------------------------ #
+# Phase E — Visual marker carry-over between ingots                  #
+# ------------------------------------------------------------------ #
+
+
+class TestInjectMissingMarkers:
+    """Unit tests for _inject_missing_visual_markers carry-over return value."""
+
+    def _write_page(self, wiki, slug, body):
+        wiki.upsert_page(slug=slug, title=slug.title(), body=body)
+
+    def test_unplaceable_marker_returned_as_unplaced(self, mind):
+        from copper.core.wiki import WikiManager
+        from copper.workflows.store import _inject_missing_visual_markers
+
+        wiki = WikiManager(mind.wiki_dir)
+        marker = "[Visual on page 1, image 0: Widget. (Keywords: widget)]"
+        self._write_page(wiki, "unrelated", "Nothing relevant here.")
+
+        unplaced = _inject_missing_visual_markers(
+            chunk=f"text\n\n{marker}\n",
+            page_slugs=["unrelated"],
+            wiki=wiki,
+        )
+        assert len(unplaced) == 1
+        assert "Widget" in unplaced[0]
+
+    def test_carry_marker_placed_when_matching_page_exists(self, mind):
+        from copper.core.wiki import WikiManager
+        from copper.workflows.store import _inject_missing_visual_markers
+
+        wiki = WikiManager(mind.wiki_dir)
+        marker = (
+            "[Visual on page 8, image 0: Yu-Thorak. A gargantuan creature. "
+            "(Keywords: yu-thorak, gargantuan, creature)]"
+        )
+        # Ingot 1: no matching page → marker returned as unplaced.
+        self._write_page(wiki, "intro", "Intro text.")
+        unplaced = _inject_missing_visual_markers(
+            chunk=f"Intro.\n\n{marker}\n",
+            page_slugs=["intro"],
+            wiki=wiki,
+            carry_markers=[],
+        )
+        assert len(unplaced) == 1
+
+        # Ingot 2: yu-thorak page now exists → carry marker placed.
+        self._write_page(wiki, "yu-thorak", "Yu-Thorak description.")
+        unplaced2 = _inject_missing_visual_markers(
+            chunk="Yu-Thorak is a creature.",
+            page_slugs=["yu-thorak"],
+            wiki=wiki,
+            carry_markers=unplaced,
+        )
+        assert unplaced2 == []
+        assert "Visual on page 8" in wiki.page("yu-thorak").body
+
+    def test_carry_marker_still_unplaced_after_two_ingots(self, mind):
+        from copper.core.wiki import WikiManager
+        from copper.workflows.store import _inject_missing_visual_markers
+
+        wiki = WikiManager(mind.wiki_dir)
+        marker = "[Visual on page 3, image 0: SpecialThing. (Keywords: specialthing)]"
+
+        self._write_page(wiki, "page-a", "Nothing relevant.")
+        unplaced1 = _inject_missing_visual_markers(
+            chunk=f"text\n\n{marker}\n",
+            page_slugs=["page-a"],
+            wiki=wiki,
+            carry_markers=[],
+        )
+        assert len(unplaced1) == 1
+
+        self._write_page(wiki, "page-b", "Also nothing.")
+        unplaced2 = _inject_missing_visual_markers(
+            chunk="another chunk",
+            page_slugs=["page-b"],
+            wiki=wiki,
+            carry_markers=unplaced1,
+        )
+        assert len(unplaced2) == 1
+
+    def test_no_page_slugs_returns_all_candidates(self, mind):
+        from copper.core.wiki import WikiManager
+        from copper.workflows.store import _inject_missing_visual_markers
+
+        wiki = WikiManager(mind.wiki_dir)
+        carry = ["[Visual on page 1, image 0: Foo. (Keywords: foo)]"]
+        marker = "[Visual on page 2, image 0: Bar. (Keywords: bar)]"
+
+        unplaced = _inject_missing_visual_markers(
+            chunk=f"\n{marker}\n",
+            page_slugs=[],
+            wiki=wiki,
+            carry_markers=carry,
+        )
+        assert len(unplaced) == 2
+
+
+class TestCarryOverIntegration:
+    """Integration test: marker from ingot 1 placed in ingot 2 via StoreWorkflow.run()."""
+
+    def test_two_ingot_carry_over_no_orphan_warning(self, mind, tmp_path, monkeypatch):
+        import copper.workflows.store as store_module
+        from copper.workflows.store import StoreWorkflow
+        from copper.llm.mock import MockLLM
+
+        warnings: list[str] = []
+
+        class _FakeLogger:
+            def warning(self, msg, *a, **k):
+                warnings.append(str(msg))
+
+            def info(self, *a, **k):
+                pass
+
+        monkeypatch.setattr(store_module, "logger", _FakeLogger())
+
+        marker = (
+            "[Visual on page 8, image 0: Yu-Thorak. A gargantuan creature. "
+            "(Keywords: yu-thorak, gargantuan, creature)]"
+        )
+        chunk1 = f"Some intro text.\n\n{marker}\n"
+        chunk2 = "Yu-Thorak appeared on the battlefield."
+
+        class _MockRegistry:
+            def to_chunks(self, *a, **kw):
+                return [chunk1, chunk2]
+
+        monkeypatch.setattr(store_module, "default_registry", lambda: _MockRegistry())
+
+        source = tmp_path / "src.md"
+        source.write_text("content")
+
+        llm = MockLLM(
+            [
+                # Ingot 1: writes an unrelated page (marker can't be placed yet)
+                '<wiki_updates><page slug="intro" title="Intro" action="create">'
+                "<content>Some intro text.</content></page></wiki_updates>",
+                # Ingot 2: writes the Yu-Thorak page (carry marker should land here)
+                '<wiki_updates><page slug="yu-thorak" title="Yu-Thorak" action="create">'
+                "<content>Yu-Thorak appeared on the battlefield.</content></page></wiki_updates>",
+                # Polish call (multi-ingot triggers polish)
+                "Polish report.",
+                # Meta call inside polish
+                "Meta summary.",
+            ]
+        )
+
+        StoreWorkflow(mind, llm).run(source, no_route=True)
+
+        yu_thorak = mind.wiki_dir / "yu-thorak.md"
+        assert yu_thorak.exists()
+        assert "Visual on page 8" in yu_thorak.read_text()
+        assert not any("Dropping orphan marker" in w for w in warnings)
+
+    def test_carry_buffer_cap_drops_oldest_with_warning(self, mind, tmp_path, monkeypatch):
+        import copper.workflows.store as store_module
+        from copper.workflows.store import StoreWorkflow, _CARRY_MARKER_CAP
+        from copper.llm.mock import MockLLM
+
+        warnings: list[str] = []
+
+        class _FakeLogger:
+            def warning(self, msg, *a, **k):
+                warnings.append(str(msg))
+
+            def info(self, *a, **k):
+                pass
+
+        monkeypatch.setattr(store_module, "logger", _FakeLogger())
+
+        # Build chunk1 with _CARRY_MARKER_CAP + 1 distinct unplaceable markers.
+        markers = [
+            f"[Visual on page {n}, image 0: Entity{n}. (Keywords: entity{n})]"
+            for n in range(_CARRY_MARKER_CAP + 1)
+        ]
+        chunk1 = "Intro.\n\n" + "\n\n".join(markers)
+        chunk2 = "Unrelated second chunk."
+
+        class _MockRegistry:
+            def to_chunks(self, *a, **kw):
+                return [chunk1, chunk2]
+
+        monkeypatch.setattr(store_module, "default_registry", lambda: _MockRegistry())
+
+        source = tmp_path / "src.md"
+        source.write_text("content")
+
+        llm = MockLLM(
+            [
+                # Ingot 1: writes an unrelated page — all markers remain unplaced
+                '<wiki_updates><page slug="unrelated" title="Unrelated" action="create">'
+                "<content>Nothing related.</content></page></wiki_updates>",
+                # Ingot 2: also unrelated
+                '<wiki_updates><page slug="unrelated2" title="Unrelated2" action="create">'
+                "<content>Still nothing.</content></page></wiki_updates>",
+                "Polish report.",
+                "Meta summary.",
+            ]
+        )
+
+        StoreWorkflow(mind, llm).run(source, no_route=True)
+
+        cap_warnings = [w for w in warnings if "Carry-over buffer full" in w]
+        assert cap_warnings, "Expected at least one cap warning when buffer exceeds limit"
