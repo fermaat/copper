@@ -80,6 +80,10 @@ def _parse_wiki_pages(text: str) -> list[tuple[str, str, str, str]]:
     """Parse <page> elements from normalized LLM output, tolerating:
     - Attributes in any order (slug/title/action).
     - Truncated output: missing </content> or </page> — auto-closed at segment boundary.
+    - Pages without <content> tags — segment body recovered.
+
+    Pages with empty body after extraction are skipped with a warning to avoid
+    silently overwriting existing wiki pages with nothing.
 
     Returns a list of (slug, title, action, content) tuples.
     """
@@ -101,7 +105,15 @@ def _parse_wiki_pages(text: str) -> list[tuple[str, str, str, str]]:
         # Extract content between <content> and </content>, auto-closing if truncated.
         c_open = segment.find("<content>")
         if c_open == -1:
-            content = ""
+            # No <content> tag — recover body from the page segment itself.
+            # Some models (e.g. gemma4) drop the inner tags and put the body
+            # directly inside <page>...</page>. Treat that segment as the body.
+            page_close = segment.find("</page>")
+            content = segment[: page_close if page_close != -1 else len(segment)]
+            if content.strip():
+                logger.warning(
+                    f"[store] Page '{slug}' missing <content> tags — using segment as body"
+                )
         else:
             body_start = c_open + len("<content>")
             c_close = segment.find("</content>", body_start)
@@ -113,7 +125,14 @@ def _parse_wiki_pages(text: str) -> list[tuple[str, str, str, str]]:
             else:
                 content = segment[body_start:c_close]
 
-        results.append((slug, title, action, content.strip()))
+        content = content.strip()
+        if not content:
+            # Never persist an empty body — would overwrite an existing page with nothing.
+            # When no pages are written at all, _apply_wiki_updates falls back to retry.
+            logger.warning(f"[store] Skipping page '{slug}': empty content after parse")
+            continue
+
+        results.append((slug, title, action, content))
     return results
 
 

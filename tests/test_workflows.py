@@ -900,6 +900,39 @@ class TestParseWikiPages:
         xml = '<page title="NoSlug" action="create"><content>Body</content></page>'
         assert _parse_wiki_pages(xml) == []
 
+    def test_missing_content_tags_uses_segment_as_body(self):
+        """Some models (e.g. gemma4) skip the inner <content> tags. The parser
+        must recover the body from the <page>...</page> segment instead of
+        silently producing an empty page (which would overwrite real content)."""
+        from copper.workflows.store import _parse_wiki_pages
+
+        xml = (
+            '<page slug="nightblood" title="Nightblood" action="create">'
+            "On the planet Nalthis, Nightblood is a sentient sword."
+            "</page>"
+        )
+        pages = _parse_wiki_pages(xml)
+        assert len(pages) == 1
+        slug, title, _, content = pages[0]
+        assert slug == "nightblood"
+        assert title == "Nightblood"
+        assert "On the planet Nalthis" in content
+
+    def test_empty_content_tags_skipped(self):
+        """A <page> with explicit but empty <content></content> must not be
+        persisted — would silently wipe an existing page on update."""
+        from copper.workflows.store import _parse_wiki_pages
+
+        xml = '<page slug="empty" title="Empty" action="create"><content></content></page>'
+        assert _parse_wiki_pages(xml) == []
+
+    def test_empty_page_skipped(self):
+        """A <page>...</page> with no body at all must not be persisted."""
+        from copper.workflows.store import _parse_wiki_pages
+
+        xml = '<page slug="ghost" title="Ghost" action="create"></page>'
+        assert _parse_wiki_pages(xml) == []
+
 
 class TestSendWithRetryEmptyResponse:
     """Verify empty response triggers its own hint, not the malformed-XML hint."""
