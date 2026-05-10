@@ -792,3 +792,212 @@ class TestTapParallelDescent:
         result = TapWorkflow([parent], llm).run("¿resumen?")
         assert result.answer == "Respuesta solo padre."
         assert llm._call_count == 2
+
+
+# ------------------------------------------------------------------ #
+# Phase D — Parser robustness + richer orphan-marker logging          #
+# ------------------------------------------------------------------ #
+
+
+class TestNormalizeXml:
+    def test_strips_xml_code_fence(self):
+        from copper.workflows.store import _normalize_xml
+
+        text = "```xml\n<wiki_updates></wiki_updates>\n```"
+        assert _normalize_xml(text) == "<wiki_updates></wiki_updates>"
+
+    def test_strips_plain_code_fence(self):
+        from copper.workflows.store import _normalize_xml
+
+        text = "```\n<wiki_updates></wiki_updates>\n```"
+        assert _normalize_xml(text) == "<wiki_updates></wiki_updates>"
+
+    def test_replaces_smart_double_quotes(self):
+        from copper.workflows.store import _normalize_xml
+
+        assert _normalize_xml("“test”") == '"test"'
+
+    def test_replaces_smart_single_quotes(self):
+        from copper.workflows.store import _normalize_xml
+
+        assert _normalize_xml("‘hello’") == "'hello'"
+
+    def test_strips_whitespace(self):
+        from copper.workflows.store import _normalize_xml
+
+        assert _normalize_xml("  <x/>  ") == "<x/>"
+
+    def test_empty_returns_empty(self):
+        from copper.workflows.store import _normalize_xml
+
+        assert _normalize_xml("") == ""
+        assert _normalize_xml("   ") == ""
+
+
+class TestParseWikiPages:
+    def test_parses_standard_page(self):
+        from copper.workflows.store import _parse_wiki_pages
+
+        xml = (
+            '<page slug="foo" title="Foo" action="create">'
+            "<content>Hello world</content>"
+            "</page>"
+        )
+        pages = _parse_wiki_pages(xml)
+        assert len(pages) == 1
+        assert pages[0] == ("foo", "Foo", "create", "Hello world")
+
+    def test_attributes_in_reverse_order(self):
+        from copper.workflows.store import _parse_wiki_pages
+
+        xml = '<page action="update" title="Bar" slug="bar">' "<content>Body</content>" "</page>"
+        pages = _parse_wiki_pages(xml)
+        assert len(pages) == 1
+        slug, title, action, content = pages[0]
+        assert slug == "bar"
+        assert title == "Bar"
+        assert action == "update"
+        assert content == "Body"
+
+    def test_truncated_page_auto_closes(self):
+        from copper.workflows.store import _parse_wiki_pages
+
+        xml = '<page slug="cut" title="Cut" action="create"><content>Truncated content'
+        pages = _parse_wiki_pages(xml)
+
+        assert len(pages) == 1
+        assert pages[0][0] == "cut"
+        assert "Truncated content" in pages[0][3]
+
+    def test_multiple_pages_parsed(self):
+        from copper.workflows.store import _parse_wiki_pages
+
+        xml = (
+            '<page slug="a" title="A" action="create"><content>Alpha</content></page>'
+            '<page slug="b" title="B" action="update"><content>Beta</content></page>'
+        )
+        pages = _parse_wiki_pages(xml)
+        assert len(pages) == 2
+        assert pages[0][0] == "a"
+        assert pages[1][0] == "b"
+
+    def test_markdown_fenced_response_parsed_after_normalize(self):
+        from copper.workflows.store import _normalize_xml, _parse_wiki_pages
+
+        raw = (
+            "```xml\n"
+            '<page slug="x" title="X" action="create">'
+            "<content>Content</content></page>\n"
+            "```"
+        )
+        pages = _parse_wiki_pages(_normalize_xml(raw))
+        assert len(pages) == 1
+        assert pages[0][0] == "x"
+
+    def test_missing_slug_or_title_skipped(self):
+        from copper.workflows.store import _parse_wiki_pages
+
+        xml = '<page title="NoSlug" action="create"><content>Body</content></page>'
+        assert _parse_wiki_pages(xml) == []
+
+
+class TestSendWithRetryEmptyResponse:
+    """Verify empty response triggers its own hint, not the malformed-XML hint."""
+
+    def _recording_llm(self, responses):
+        """Return (llm, received_contents, call_count_ref) for inspecting call inputs."""
+        from copper.llm.base import LLMResponse
+
+        received = []
+        call_count = [0]
+
+        class _RecordingLLM:
+            def complete(self_, msgs, **kw):
+                received.append(msgs[-1].content)
+                idx = call_count[0] % len(responses)
+                call_count[0] += 1
+                return LLMResponse(text=responses[idx], tokens_used=0, metadata={})
+
+        return _RecordingLLM(), received, call_count
+
+    def test_empty_response_retried_with_empty_hint(self):
+        from copper.workflows.store import _send_with_retry, _EMPTY_RETRY_HINT
+
+        llm, received, calls = self._recording_llm(
+            [
+                "",  # attempt 0: empty
+                '<wiki_updates><page slug="p" title="P" action="create">'
+                "<content>ok</content></page></wiki_updates>",
+            ]
+        )
+        text, _, _ = _send_with_retry(llm, "system", "user", max_retries=2)
+
+        assert calls[0] == 2
+        assert _EMPTY_RETRY_HINT.splitlines()[0] in received[1]
+        assert "<page" in text
+
+    def test_malformed_xml_retried_with_malformed_hint(self):
+        from copper.workflows.store import _send_with_retry, _MALFORMED_RETRY_HINT
+
+        llm, received, calls = self._recording_llm(
+            [
+                "This is not XML at all",  # attempt 0: malformed
+                '<wiki_updates><page slug="p" title="P" action="create">'
+                "<content>ok</content></page></wiki_updates>",
+            ]
+        )
+        text, _, _ = _send_with_retry(llm, "system", "user", max_retries=2)
+
+        assert calls[0] == 2
+        assert _MALFORMED_RETRY_HINT.splitlines()[0] in received[1]
+
+    def test_max_retries_two_honored(self):
+        from copper.workflows.store import _send_with_retry, _MAX_XML_RETRIES
+
+        assert _MAX_XML_RETRIES == 2
+        llm, _, calls = self._recording_llm(["bad", "bad", "bad"])
+        _send_with_retry(llm, "system", "user", max_retries=2)
+        assert calls[0] == 3  # attempts 0, 1, 2
+
+
+class TestOrphanMarkerLog:
+    """D.1 — orphan-drop warning includes entity name and keywords."""
+
+    def test_orphan_warning_includes_entity_and_keywords(self, mind, tmp_path, monkeypatch):
+        import copper.workflows.store as store_module
+        from copper.workflows.store import StoreWorkflow
+        from copper.llm.mock import MockLLM
+
+        warnings: list[str] = []
+
+        class _FakeLogger:
+            def warning(self, msg, *a, **k):
+                warnings.append(str(msg))
+
+            def info(self, *a, **k):
+                pass
+
+        monkeypatch.setattr(store_module, "logger", _FakeLogger())
+
+        marker = (
+            "[Visual on page 8, image 0: Yu-Thorak. A gargantuan creature. "
+            "(Keywords: yu-thorak, gargantuan, creature)]"
+        )
+        source = tmp_path / "src.md"
+        source.write_text(f"# Intro\n\n{marker}\n\nSome text.\n")
+
+        # LLM writes an unrelated page — marker scores below confidence floor.
+        llm = MockLLM(
+            [
+                '<wiki_updates><page slug="intro" title="Intro" action="create">'
+                "<content>Some text.</content></page></wiki_updates>",
+                "Meta.",
+            ]
+        )
+        StoreWorkflow(mind, llm).run(source)
+
+        orphan_warnings = [w for w in warnings if "Dropping orphan marker" in w]
+        assert orphan_warnings, "Expected at least one orphan-drop warning"
+        msg = orphan_warnings[0]
+        assert "Yu-Thorak" in msg
+        assert "yu-thorak" in msg

@@ -32,15 +32,10 @@ if TYPE_CHECKING:
 MAX_CHUNK_CHARS = settings.copper_store_max_chunk_chars
 
 # Number of additional attempts after the first if the LLM returns no valid XML.
-# 1 retry is usually enough; the second attempt uses a more emphatic prompt.
-_MAX_XML_RETRIES = 1
-
-# action is optional — gemma4 and similar sometimes omit it for new pages.
-# When missing we default to "create" in the consumer.
-_PAGE_PATTERN = re.compile(
-    r'<page\s+slug="([^"]+)"\s+title="([^"]+)"(?:\s+action="([^"]+)")?[^>]*>\s*<content>(.*?)</content>\s*</page>',
-    re.DOTALL,
-)
+# 2 retries: attempt 1 uses an empty-response or malformed-XML hint; attempt 2
+# is cheap insurance for residual cases after the relaxed parser handles most
+# truncations on the first try.
+_MAX_XML_RETRIES = 2
 
 # Visual marker emitted by the PDF ingest. Carries page+image coordinates and a
 # short description with optional "(Keywords: …)" tail used by the safety net.
@@ -53,6 +48,74 @@ _VISUAL_PREFIX_RE = re.compile(r"^\[Visual on page \d+, image \d+:\s*")
 # marker by construction and would otherwise bias the scoring towards any page
 # that already contains a visual.
 _MARKER_STOPWORDS = frozenset({"keywords", "tags", "visual", "image", "page", "pages"})
+
+# ---- XML normalization + relaxed parser ---------------------------------- #
+
+
+def _normalize_xml(text: str) -> str:
+    """Pre-process LLM output before XML parsing.
+
+    Handles the three most common failure modes:
+    - Markdown code fences wrapping the XML block.
+    - Smart/curly quotes injected by some models.
+    - Stray leading/trailing whitespace.
+    """
+    text = text.strip()
+    # Strip a single markdown fence (```xml or ```) at start and end.
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+    if text.endswith("```"):
+        text = text.rsplit("\n", 1)[0]
+    # Replace smart quotes with straight equivalents.
+    for smart, straight in (("“", '"'), ("”", '"'), ("‘", "'"), ("’", "'")):
+        text = text.replace(smart, straight)
+    return text.strip()
+
+
+_PAGE_OPEN_RE = re.compile(r"<page\s+([^>]*)>", re.DOTALL)
+_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
+
+
+def _parse_wiki_pages(text: str) -> list[tuple[str, str, str, str]]:
+    """Parse <page> elements from normalized LLM output, tolerating:
+    - Attributes in any order (slug/title/action).
+    - Truncated output: missing </content> or </page> — auto-closed at segment boundary.
+
+    Returns a list of (slug, title, action, content) tuples.
+    """
+    results = []
+    opens = list(_PAGE_OPEN_RE.finditer(text))
+    for i, m in enumerate(opens):
+        attrs = dict(_ATTR_RE.findall(m.group(1)))
+        slug = attrs.get("slug", "")
+        title = attrs.get("title", "")
+        action = attrs.get("action", "create")
+        if not slug or not title:
+            continue
+
+        # Segment: from end of <page ...> to next <page or EOF.
+        seg_start = m.end()
+        seg_end = opens[i + 1].start() if i + 1 < len(opens) else len(text)
+        segment = text[seg_start:seg_end]
+
+        # Extract content between <content> and </content>, auto-closing if truncated.
+        c_open = segment.find("<content>")
+        if c_open == -1:
+            content = ""
+        else:
+            body_start = c_open + len("<content>")
+            c_close = segment.find("</content>", body_start)
+            if c_close == -1:
+                # Truncated: close at </page> boundary or segment end.
+                page_close = segment.find("</page>", body_start)
+                content = segment[body_start : page_close if page_close != -1 else len(segment)]
+                logger.warning(f"[store] Auto-closed truncated page '{slug}'")
+            else:
+                content = segment[body_start:c_close]
+
+        results.append((slug, title, action, content.strip()))
+    return results
+
 
 # Loaded lazily via render_prompt() inside the workflow so a missing YAML
 # surfaces early with a clear error, rather than at module import time.
@@ -471,6 +534,16 @@ def _pick_best_slug(
     return best_slug
 
 
+def _marker_short_label(marker: str) -> str:
+    """Human-readable label for log messages: entity name + keywords (if any)."""
+    body = _VISUAL_PREFIX_RE.sub("", marker)
+    body = _VISUAL_KEYWORDS_RE.sub("", body).rstrip("] ").strip()
+    name = body[:50].rstrip()
+    kws = _marker_keywords(marker)
+    suffix = f" — keywords: [{', '.join(kws)}]" if kws else ""
+    return f'"{name}"{suffix}'
+
+
 def _inject_missing_visual_markers(
     chunk: str,
     page_slugs: list[str],
@@ -536,8 +609,9 @@ def _inject_missing_visual_markers(
                 continue
             best_slug = _pick_best_slug(marker, bodies)
             if best_slug is None:
+                label = _marker_short_label(marker)
                 logger.warning(
-                    f"[store] Dropping orphan marker {m_id} "
+                    f"[store] Dropping orphan marker {m_id}: {label} "
                     f"(LLM wrote pages: {sorted(bodies.keys())}). "
                     "No page scored above the placement-confidence floor — "
                     "the marker's subject was likely merged into another page "
@@ -611,10 +685,43 @@ def _build_store_prompt(
     )
 
 
+_EMPTY_RETRY_HINT = (
+    "IMPORTANT: Your previous response was empty. The chunk may have been too large.\n"
+    "Respond now with a concise <wiki_updates>...</wiki_updates> covering only the most\n"
+    "important entities — you can omit minor details.\n"
+    "Requirements (all mandatory):\n"
+    '- Every <page> tag MUST include all three attributes: slug="...", '
+    'title="...", action="create" (or "update" if updating).\n'
+    "- Every <content> tag MUST be closed with </content> before </page>.\n"
+    "- Every <page> tag MUST be closed with </page>.\n"
+    "- The whole block MUST close with </wiki_updates>.\n"
+    "- Do NOT wrap the response in markdown code fences (```).\n"
+    "- Do NOT add preamble, commentary, or explanation."
+)
+
+_MALFORMED_RETRY_HINT = (
+    "IMPORTANT: Your previous response did not contain valid, parseable XML.\n"
+    "Respond now with ONLY the <wiki_updates>...</wiki_updates> structure.\n"
+    "Requirements (all mandatory):\n"
+    '- Every <page> tag MUST include all three attributes: slug="...", '
+    'title="...", action="create" (or "update" if updating).\n'
+    "- Every <content> tag MUST be closed with </content> before </page>.\n"
+    "- Every <page> tag MUST be closed with </page>.\n"
+    "- The whole block MUST close with </wiki_updates>.\n"
+    "- Do NOT wrap the response in markdown code fences (```).\n"
+    "- Do NOT add preamble, commentary, or explanation.\n"
+    "- Keep each page body concise enough that the full XML fits in your output budget."
+)
+
+
 def _send_with_retry(
     llm: LLMBase, system_prompt: str, user_prompt: str, max_retries: int = _MAX_XML_RETRIES
 ) -> tuple[str, int, float]:
-    """Call the LLM; retry once with a stricter prompt if no valid <page> XML appears.
+    """Call the LLM; retry up to max_retries times when no valid <page> XML appears.
+
+    Distinguishes two failure modes for clearer logs and better retry hints:
+    - Empty response (0 tokens): uses a "be concise" prompt.
+    - Malformed/no XML: uses a strict structure reminder.
 
     Returns (final_text, total_tokens_across_all_attempts, total_cost).
     Token/cost are accumulated across attempts so the workflow stats stay honest.
@@ -622,27 +729,15 @@ def _send_with_retry(
     accumulated_text = ""
     accumulated_tokens = 0
     accumulated_cost = 0.0
+    last_failure: str = "malformed"
 
     for attempt in range(max_retries + 1):
         if attempt == 0:
             content = user_prompt
         else:
-            content = (
-                user_prompt
-                + "\n\n---\n"
-                + "IMPORTANT: Your previous response did not contain valid, parseable XML.\n"
-                + "Respond now with ONLY the <wiki_updates>...</wiki_updates> structure.\n"
-                + "Requirements (all mandatory):\n"
-                + '- Every <page> tag MUST include all three attributes: slug="...", '
-                + 'title="...", action="create" (or "update" if updating).\n'
-                + "- Every <content> tag MUST be closed with </content> before </page>.\n"
-                + "- Every <page> tag MUST be closed with </page>.\n"
-                + "- The whole block MUST close with </wiki_updates>.\n"
-                + "- Do NOT wrap the response in markdown code fences (```).\n"
-                + "- Do NOT add preamble, commentary, or explanation.\n"
-                + "- Keep each page body concise enough that the full XML fits in your output budget."
-            )
-            logger.info(f"[store] Retry {attempt}/{max_retries} with stricter prompt...")
+            hint = _EMPTY_RETRY_HINT if last_failure == "empty" else _MALFORMED_RETRY_HINT
+            content = user_prompt + "\n\n---\n" + hint
+            logger.info(f"[store] Retry {attempt}/{max_retries} ({last_failure} response)...")
 
         messages = [
             Message(role="system", content=system_prompt),
@@ -654,14 +749,23 @@ def _send_with_retry(
         accumulated_text = response.text
         logger.info(f"[store] LLM responded ({response.tokens_used} tokens, attempt {attempt + 1})")
 
-        if _PAGE_PATTERN.search(response.text):
+        normalized = _normalize_xml(response.text)
+
+        if not normalized:
+            last_failure = "empty"
+            if attempt < max_retries:
+                logger.warning(f"[store] Attempt {attempt + 1}: empty response")
+            continue
+
+        if re.search(r"<page\s", normalized):
             return accumulated_text, accumulated_tokens, accumulated_cost
 
+        last_failure = "malformed"
         if attempt < max_retries:
-            preview = response.text.strip().replace("\n", " ")[:500]
+            preview = normalized.replace("\n", " ")[:500]
             logger.warning(
-                f"[store] Attempt {attempt + 1}: no valid XML. "
-                f"Preview: {preview}{'…' if len(response.text) > 500 else ''}"
+                f"[store] Attempt {attempt + 1}: malformed XML. "
+                f"Preview: {preview}{'…' if len(normalized) > 500 else ''}"
             )
 
     return accumulated_text, accumulated_tokens, accumulated_cost
@@ -672,17 +776,12 @@ def _apply_wiki_updates(llm_output: str, source_name: str, wiki: WikiManager) ->
 
     By the time this is called, ``_send_with_retry`` has already exhausted its
     retries — so a missing XML structure here means we genuinely fall back.
+    Uses the relaxed parser: tolerates any attribute order and auto-closes truncated pages.
     """
     pages_written: list[str] = []
     link_pattern = re.compile(r"\[\[([^\]]+)\]\]")
 
-    for m in _PAGE_PATTERN.finditer(llm_output):
-        slug, title, action, content = (
-            m.group(1),
-            m.group(2),
-            m.group(3) or "create",
-            m.group(4).strip(),
-        )
+    for slug, title, action, content in _parse_wiki_pages(_normalize_xml(llm_output)):
         wiki.upsert_page(
             slug=slug, title=title, body=content, bump_source_count=(action == "update")
         )
