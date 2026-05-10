@@ -37,12 +37,12 @@ src/copper/
 ├── core/
 │   └── meta.py          # regenerate_meta(mind, llm) → Path — shared _meta.md helper (store + polish)
 ├── workflows/
-│   ├── store.py         # StoreWorkflow: source → chunks → LLM → XML wiki updates → _meta refresh → auto-polish
+│   ├── store.py         # StoreWorkflow: source → chunks → LLM → relaxed XML parser → visual marker carry-over → _meta refresh → auto-polish
 │   ├── tap.py           # TapWorkflow: question (+ optional history) + wiki context → LLM → TapResult
 │   └── polish.py        # PolishWorkflow: structural checks + LLM audit → lint report → _meta refresh
 ├── api/
 │   ├── app.py           # FastAPI application factory
-│   ├── routes/          # REST routes: minds (CRUD, wiki, links) + workflows (store, tap, polish)
+│   ├── routes/          # REST routes: minds (CRUD, wiki, wiki/tree, links) + workflows (store, tap, polish)
 │   ├── deps.py          # get_llm() — wires provider from Settings, passes all config explicitly
 │   └── templates/       # Jinja2 + HTMX web UI
 ├── watch.py             # watch_raw_dir() — watchdog Observer + stability polling
@@ -96,7 +96,7 @@ src/copper/
 - `build_default_retriever(llm)` (`factory.py`) — wires LLM + keyword into an alloy from Settings
 
 **Workflows**
-- `StoreWorkflow(mind, llm).run(path)` → `registry.to_chunks()` → per-chunk LLM call (refreshes index between chunks) → `<wiki_updates>` XML → wiki pages → `regenerate_meta` on success → auto-polish if multi-chunk → `StoreResult`
+- `StoreWorkflow(mind, llm).run(path)` → `registry.to_chunks()` → per-chunk LLM call (refreshes index between chunks) → `_normalize_xml` + `_parse_wiki_pages` (relaxed parser: any attr order, auto-close truncated) → wiki pages → visual marker carry-over across ingots → `regenerate_meta` on success → auto-polish if multi-chunk → `StoreResult`
 - `TapWorkflow(minds, llm).run(question, history=None)` → retrieves relevant pages → builds context → appends optional prior turns → LLM → `TapResult`. `history` is a list of `Message(role, content)` for multi-turn chat.
 - `PolishWorkflow(mind, llm).run()` → structural checks (orphans, stubs, missing backlinks) + LLM audit → `wiki/lint-report-<date>.md`
 
@@ -182,6 +182,7 @@ Resolution order: **per-mind `.copper/config.yaml` → workflow env var → gene
   - Phase 6.5 ✓ — deep structural polish (`polish --deep`): map-reduce LLM reorganization, page moves, transversal synthesis, spine refresh
   - Phase 7 ✓ — API tree navigation (`GET /minds` includes children, `GET /minds/{parent}/{child}` path routing), HTMX sidebar shows nested tree, watch covers all descendants
 - Tech debt sprint ✓ — `copper move`, same-tree link warning, per-mind `max_depth`, `_meta.md` refresh after every store (`core/meta.py`), `TapFallbackError` cap, profiler instrumentation, parallel hierarchical descents (`ThreadPoolExecutor`)
+- Tech debt sprint v2 ✓ — relaxed XML parser (any attr order, auto-close truncated, empty vs malformed retry hints), visual marker carry-over across ingots, richer orphan-marker logs, `GET /minds/{name:path}/wiki/tree` endpoint, UI full-tree wiki view grouped by mind
 
 ## Known technical debt
 
