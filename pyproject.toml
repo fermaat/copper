@@ -1,6 +1,6 @@
 [project]
 name = "copper"
-version = "2.1.1"
+version = "2.1.2"
 description = "Mentecobres: AI-maintained knowledge bases, inspired by Karpathy and the Cosmere"
 readme = "README.md"
 requires-python = ">=3.12"
