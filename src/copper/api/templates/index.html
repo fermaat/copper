@@ -256,9 +256,9 @@
       document.getElementById('empty-state').classList.add('hidden');
       document.getElementById('mind-detail').classList.remove('hidden');
 
-      const [stats, pages] = await Promise.all([
+      const [stats, tree] = await Promise.all([
         fetch(`/minds/${name}`).then(r => r.json()),
-        fetch(`/minds/${name}/wiki`).then(r => r.json()),
+        fetch(`/minds/${name}/wiki/tree`).then(r => r.json()),
       ]);
 
       // Stats card
@@ -275,9 +275,20 @@
       // Connections card (chips + dropdown)
       loadConnections(name);
 
-      // Wiki pages list
-      document.getElementById('wiki-pages-list').innerHTML = pages.length
-        ? pages.map(p => `<div class="wiki-page wiki-page-link" onclick="showPage('${p}')" title="Click to read">· ${p}</div>`).join('')
+      // Wiki pages grouped by mind (tree view)
+      const hasAnyPage = tree.some(g => g.slugs.length > 0);
+      document.getElementById('wiki-pages-list').innerHTML = hasAnyPage
+        ? tree.map(group => {
+            const pad = group.depth > 0 ? `padding-left:${group.depth}rem` : '';
+            const prefix = group.depth > 0 ? '<span class="mind-tree-prefix">└─ </span>' : '';
+            const header = `<div class="wiki-group-header" style="${pad}">${prefix}${group.mind}</div>`;
+            const links = group.slugs.length
+              ? group.slugs.map(p =>
+                  `<div class="wiki-page wiki-page-link" style="${pad}" onclick="showPage('${group.mind}', '${p}')" title="Click to read">· ${p}</div>`
+                ).join('')
+              : `<div class="wiki-page text-dim" style="${pad}"><em>(no pages yet)</em></div>`;
+            return header + links;
+          }).join('')
         : '<span class="text-dim">No pages yet. Store a source first.</span>';
 
       // Reset result panels
@@ -580,8 +591,8 @@
     // ----------------------------------------------------------------
     let currentPage = null;  // { slug, body, frontmatter }
 
-    async function showPage(slug) {
-      if (!currentMind) return;
+    async function showPage(mindPath, slug) {
+      if (!mindPath) return;
       const modal = document.getElementById('page-modal');
       const titleEl = document.getElementById('page-modal-title');
       const bodyEl = document.getElementById('page-modal-body');
@@ -591,13 +602,13 @@
       modal.classList.add('open');
       exitEditMode();
 
-      const res = await fetch(`/minds/${currentMind}/wiki/${slug}`);
+      const res = await fetch(`/minds/${mindPath}/wiki/${slug}`);
       if (!res.ok) { bodyEl.textContent = 'Page not found.'; return; }
       const data = await res.json();
 
-      currentPage = { slug, body: data.body, frontmatter: data.frontmatter };
+      currentPage = { mindPath, slug, body: data.body, frontmatter: data.frontmatter };
       titleEl.textContent = data.frontmatter?.title || slug;
-      const enriched = enrichVisualMarkers(data.body, currentMind);
+      const enriched = enrichVisualMarkers(data.body, mindPath);
       bodyEl.innerHTML = marked.parse(enriched);
     }
 
@@ -667,13 +678,13 @@
     }
 
     async function savePage() {
-      if (!currentPage || !currentMind) return;
+      if (!currentPage || !currentPage.mindPath) return;
       const newBody = document.getElementById('page-modal-editor').value;
       const saveBtn = document.getElementById('page-save-btn');
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving…';
 
-      const res = await fetch(`/minds/${currentMind}/wiki/${currentPage.slug}`, {
+      const res = await fetch(`/minds/${currentPage.mindPath}/wiki/${currentPage.slug}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body: newBody }),
