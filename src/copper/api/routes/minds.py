@@ -126,6 +126,31 @@ def get_graph():
 # ------------------------------------------------------------------ #
 
 
+@router.get("/{name:path}/wiki/tree")
+def list_wiki_pages_tree(name: str) -> list[dict]:
+    """Return wiki pages grouped by mind across this mind's full subtree.
+
+    Response shape (pre-order DFS, parent before children):
+    [
+      {"mind": "padre",          "depth": 0, "slugs": ["index", ...]},
+      {"mind": "padre/hijo-a",   "depth": 1, "slugs": [...]},
+      {"mind": "padre/hijo-b",   "depth": 1, "slugs": [...]},
+    ]
+    The ``mind`` field uses the slash-separated path convention used by other
+    routes (e.g. GET /minds/padre/hijo-a/wiki).
+    """
+    root = _get_or_404(name)
+    result: list[dict] = []
+
+    def _traverse(mind: CopperMind, path: str, depth: int) -> None:
+        result.append({"mind": path, "depth": depth, "slugs": [p.stem for p in mind.wiki_pages()]})
+        for child in mind.children():
+            _traverse(child, f"{path}/{child.name}", depth + 1)
+
+    _traverse(root, name, 0)
+    return result
+
+
 @router.get("/{name:path}/wiki", response_model=list[str])
 def list_wiki_pages(name: str):
     """List all wiki page slugs for a coppermind."""

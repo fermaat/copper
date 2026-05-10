@@ -384,3 +384,70 @@ class TestWatchDescendants:
 
         # Root + 2 children = 3 raw dirs watched
         assert len(scheduled) == 3
+
+
+# ------------------------------------------------------------------ #
+# Phase F — wiki/tree endpoint                                        #
+# ------------------------------------------------------------------ #
+
+
+class TestWikiTreeEndpoint:
+    def test_flat_mind_returns_single_entry(self, client, mind_in_db):
+        from copper.core.wiki import WikiManager
+
+        wm = WikiManager(mind_in_db.wiki_dir)
+        wm.create_page(slug="intro", title="Intro", body="Hello.")
+
+        res = client.get("/minds/test-mind/wiki/tree")
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data) == 1
+        assert data[0]["mind"] == "test-mind"
+        assert data[0]["depth"] == 0
+        assert "intro" in data[0]["slugs"]
+
+    def test_tree_with_two_children_pre_order(self, client, tmp_minds_dir):
+        from copper.core.coppermind import CopperMind
+        from copper.core.wiki import WikiManager
+
+        parent = CopperMind.forge("padre", "adventure")
+        child_a = parent.forge_child("criaturas", "creatures")
+        child_b = parent.forge_child("objetos", "objects")
+
+        WikiManager(parent.wiki_dir).create_page("p1", "P1", "Parent page.")
+        WikiManager(child_a.wiki_dir).create_page("yu-thorak", "Yu-Thorak", "A creature.")
+        WikiManager(child_b.wiki_dir).create_page("nightblood", "Nightblood", "A sword.")
+
+        res = client.get("/minds/padre/wiki/tree")
+        assert res.status_code == 200
+        data = res.json()
+
+        assert len(data) == 3
+        assert data[0]["mind"] == "padre"
+        assert data[0]["depth"] == 0
+        assert "p1" in data[0]["slugs"]
+
+        child_minds = {d["mind"]: d for d in data[1:]}
+        assert "padre/criaturas" in child_minds
+        assert "padre/objetos" in child_minds
+        assert child_minds["padre/criaturas"]["depth"] == 1
+        assert "yu-thorak" in child_minds["padre/criaturas"]["slugs"]
+        assert "nightblood" in child_minds["padre/objetos"]["slugs"]
+
+    def test_empty_node_still_appears_with_empty_slugs(self, client, tmp_minds_dir):
+        from copper.core.coppermind import CopperMind
+
+        parent = CopperMind.forge("root", "topic")
+        parent.forge_child("empty-child", "empty")
+
+        res = client.get("/minds/root/wiki/tree")
+        assert res.status_code == 200
+        data = res.json()
+
+        assert len(data) == 2
+        child_entry = next(d for d in data if d["depth"] == 1)
+        assert child_entry["slugs"] == []
+
+    def test_not_found_returns_404(self, client, tmp_minds_dir):
+        res = client.get("/minds/nonexistent/wiki/tree")
+        assert res.status_code == 404

@@ -129,6 +129,7 @@ label { font-size: 0.7rem; color: var(--text-dim); display: block; margin-bottom
 .wiki-page { padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.8rem; color: var(--text-dim); }
 .wiki-page-link { cursor: pointer; }
 .wiki-page-link:hover { color: var(--copper-light); text-decoration: underline; }
+.wiki-group-header { padding: 0.5rem 0 0.15rem; font-size: 0.7rem; color: var(--copper-dark); opacity: 0.8; font-weight: 600; letter-spacing: 0.03em; }
 
 /* Modals */
 .modal-overlay {
