@@ -845,7 +845,7 @@ class TestParseWikiPages:
         )
         pages = _parse_wiki_pages(xml)
         assert len(pages) == 1
-        assert pages[0] == ("foo", "Foo", "create", "Hello world")
+        assert pages[0] == ("foo", "Foo", "create", "Hello world", False)
 
     def test_attributes_in_reverse_order(self):
         from copper.workflows.store import _parse_wiki_pages
@@ -853,11 +853,12 @@ class TestParseWikiPages:
         xml = '<page action="update" title="Bar" slug="bar">' "<content>Body</content>" "</page>"
         pages = _parse_wiki_pages(xml)
         assert len(pages) == 1
-        slug, title, action, content = pages[0]
+        slug, title, action, content, was_auto_closed = pages[0]
         assert slug == "bar"
         assert title == "Bar"
         assert action == "update"
         assert content == "Body"
+        assert was_auto_closed is False
 
     def test_truncated_page_auto_closes(self):
         from copper.workflows.store import _parse_wiki_pages
@@ -868,6 +869,8 @@ class TestParseWikiPages:
         assert len(pages) == 1
         assert pages[0][0] == "cut"
         assert "Truncated content" in pages[0][3]
+        # The flag must propagate so the consumer can refuse destructive overwrites.
+        assert pages[0][4] is True
 
     def test_multiple_pages_parsed(self):
         from copper.workflows.store import _parse_wiki_pages
@@ -913,10 +916,23 @@ class TestParseWikiPages:
         )
         pages = _parse_wiki_pages(xml)
         assert len(pages) == 1
-        slug, title, _, content = pages[0]
+        slug, title, _, content, was_auto_closed = pages[0]
         assert slug == "nightblood"
         assert title == "Nightblood"
         assert "On the planet Nalthis" in content
+        # </page> bounded the body — not a truncation.
+        assert was_auto_closed is False
+
+    def test_missing_content_and_page_close_marks_auto_closed(self):
+        """When neither <content> nor </page> is present, the body bounds are
+        unreliable. The flag must be True so the consumer refuses to overwrite."""
+        from copper.workflows.store import _parse_wiki_pages
+
+        xml = '<page slug="cut" title="Cut" action="update">Partial body without closing'
+        pages = _parse_wiki_pages(xml)
+        assert len(pages) == 1
+        assert pages[0][0] == "cut"
+        assert pages[0][4] is True
 
     def test_empty_content_tags_skipped(self):
         """A <page> with explicit but empty <content></content> must not be
@@ -932,6 +948,55 @@ class TestParseWikiPages:
 
         xml = '<page slug="ghost" title="Ghost" action="create"></page>'
         assert _parse_wiki_pages(xml) == []
+
+
+class TestApplyWikiUpdatesDestructiveGuard:
+    """A truncated LLM response must never overwrite an existing page with a
+    partial stub. The original Yu-Thorak regression (2026-05-11) was caused by
+    this exact scenario — a truncated update wrote a 1-line stub over a full
+    bestiary entry."""
+
+    def test_auto_closed_update_does_not_overwrite_existing_page(self, tmp_path):
+        from copper.core.wiki import WikiManager
+        from copper.workflows.store import _apply_wiki_updates
+
+        wiki_dir = tmp_path / "wiki"
+        wiki_dir.mkdir()
+        wiki = WikiManager(wiki_dir)
+        original_body = "Full bestiary entry. Lots of stats and abilities."
+        wiki.create_page("yu-thorak", "Yu-Thorak", original_body)
+
+        # Truncated LLM response: <content> opens but never closes.
+        truncated = (
+            '<page slug="yu-thorak" title="Yu-Thorak" action="update">' "<content>Tier 2 Boss"
+        )
+        pages_written = _apply_wiki_updates(truncated, "src.pdf", wiki)
+
+        # yu-thorak must NOT be in the written list.
+        assert "yu-thorak" not in pages_written
+        # Existing content preserved — never overwritten by the truncated stub.
+        body_after = wiki.page("yu-thorak").body
+        assert original_body in body_after
+        assert "Tier 2 Boss" not in body_after
+
+    def test_auto_closed_create_for_new_page_still_written(self, tmp_path):
+        """Partial content on a new page is acceptable — something is better
+        than nothing when the page didn't exist before."""
+        from copper.core.wiki import WikiManager
+        from copper.workflows.store import _apply_wiki_updates
+
+        wiki_dir = tmp_path / "wiki"
+        wiki_dir.mkdir()
+        wiki = WikiManager(wiki_dir)
+
+        truncated = (
+            '<page slug="newentry" title="New Entry" action="create">'
+            "<content>Partial but useful body"
+        )
+        pages_written = _apply_wiki_updates(truncated, "src.pdf", wiki)
+
+        assert "newentry" in pages_written
+        assert "Partial but useful body" in wiki.page("newentry").body
 
 
 class TestSendWithRetryEmptyResponse:

@@ -76,7 +76,7 @@ _PAGE_OPEN_RE = re.compile(r"<page\s+([^>]*)>", re.DOTALL)
 _ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 
 
-def _parse_wiki_pages(text: str) -> list[tuple[str, str, str, str]]:
+def _parse_wiki_pages(text: str) -> list[tuple[str, str, str, str, bool]]:
     """Parse <page> elements from normalized LLM output, tolerating:
     - Attributes in any order (slug/title/action).
     - Truncated output: missing </content> or </page> — auto-closed at segment boundary.
@@ -85,9 +85,12 @@ def _parse_wiki_pages(text: str) -> list[tuple[str, str, str, str]]:
     Pages with empty body after extraction are skipped with a warning to avoid
     silently overwriting existing wiki pages with nothing.
 
-    Returns a list of (slug, title, action, content) tuples.
+    Returns a list of (slug, title, action, content, was_auto_closed) tuples.
+    ``was_auto_closed`` is True when the page's segment was truncated (missing
+    both </content> and </page>, or missing </page> with no content tag at all).
+    The caller uses this to refuse destructive overwrites on existing pages.
     """
-    results = []
+    results: list[tuple[str, str, str, str, bool]] = []
     opens = list(_PAGE_OPEN_RE.finditer(text))
     for i, m in enumerate(opens):
         attrs = dict(_ATTR_RE.findall(m.group(1)))
@@ -103,6 +106,7 @@ def _parse_wiki_pages(text: str) -> list[tuple[str, str, str, str]]:
         segment = text[seg_start:seg_end]
 
         # Extract content between <content> and </content>, auto-closing if truncated.
+        was_auto_closed = False
         c_open = segment.find("<content>")
         if c_open == -1:
             # No <content> tag — recover body from the page segment itself.
@@ -110,10 +114,16 @@ def _parse_wiki_pages(text: str) -> list[tuple[str, str, str, str]]:
             # directly inside <page>...</page>. Treat that segment as the body.
             page_close = segment.find("</page>")
             content = segment[: page_close if page_close != -1 else len(segment)]
+            if page_close == -1:
+                # Neither <content> nor </page> — body bounds are unreliable.
+                was_auto_closed = True
             if content.strip():
-                logger.warning(
-                    f"[store] Page '{slug}' missing <content> tags — using segment as body"
-                )
+                if was_auto_closed:
+                    logger.warning(f"[store] Page '{slug}' truncated (no <content> or </page>)")
+                else:
+                    logger.warning(
+                        f"[store] Page '{slug}' missing <content> tags — using segment as body"
+                    )
         else:
             body_start = c_open + len("<content>")
             c_close = segment.find("</content>", body_start)
@@ -121,6 +131,7 @@ def _parse_wiki_pages(text: str) -> list[tuple[str, str, str, str]]:
                 # Truncated: close at </page> boundary or segment end.
                 page_close = segment.find("</page>", body_start)
                 content = segment[body_start : page_close if page_close != -1 else len(segment)]
+                was_auto_closed = True
                 logger.warning(f"[store] Auto-closed truncated page '{slug}'")
             else:
                 content = segment[body_start:c_close]
@@ -132,7 +143,7 @@ def _parse_wiki_pages(text: str) -> list[tuple[str, str, str, str]]:
             logger.warning(f"[store] Skipping page '{slug}': empty content after parse")
             continue
 
-        results.append((slug, title, action, content))
+        results.append((slug, title, action, content, was_auto_closed))
     return results
 
 
@@ -831,7 +842,21 @@ def _apply_wiki_updates(llm_output: str, source_name: str, wiki: WikiManager) ->
     pages_written: list[str] = []
     link_pattern = re.compile(r"\[\[([^\]]+)\]\]")
 
-    for slug, title, action, content in _parse_wiki_pages(_normalize_xml(llm_output)):
+    for slug, title, action, content, was_auto_closed in _parse_wiki_pages(
+        _normalize_xml(llm_output)
+    ):
+        # Destructive-overwrite guard: a truncated body must never replace an
+        # existing page. Better to keep the stale-but-complete content and let
+        # the next ingest/polish refine it than to wipe real content with a
+        # half-written stub. New pages can still accept best-effort partial
+        # content (something is better than nothing when there's nothing yet).
+        if was_auto_closed and wiki.page(slug).exists():
+            logger.warning(
+                f"[store] Skipping truncated update for '{slug}': would overwrite "
+                "existing content with partial body. Re-run polish to refine."
+            )
+            continue
+
         wiki.upsert_page(
             slug=slug, title=title, body=content, bump_source_count=(action == "update")
         )
