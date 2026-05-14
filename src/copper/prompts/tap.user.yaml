@@ -1,7 +1,9 @@
 name: tap.user
 description: |
   User message template for the tap workflow (shared across all personalities).
-  Combines the retrieved wiki context and the user's question.
+  Combines the retrieved wiki context and the user's question. Intentionally
+  neutral: each personality decides in its own system prompt whether to cite
+  sources, ground strictly in the wiki, or extrapolate.
   Variables: context, question, cross_mind_instructions.
   cross_mind_instructions is a pre-rendered block (empty string for single-mind queries).
 template: |
@@ -10,5 +12,3 @@ template: |
   ---
   ## Question
   $question$cross_mind_instructions
-  Answer based solely on the wiki content above.
-  Cite the pages you use with [Source: page-name].

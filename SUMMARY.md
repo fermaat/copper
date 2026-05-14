@@ -79,8 +79,8 @@ src/copper/
 - `render_prompt(name, **variables) → str` — renders a named YAML prompt; raises `ValueError` if unknown
 - `list_prompts(prefix=None) → list[str]` — lists registered names, optional prefix filter (e.g. `"tap."`)
 - Built-in prompts (system + user templates split per workflow):
-  - **Tap personalities** (system): `tap.archivist`, `tap.gamemaster`, `tap.scholar`, `tap.inquisitor`
-  - **Tap user**: `tap.user` (shared across all personalities)
+  - **Tap personalities** (system): `tap.archivist`, `tap.gamemaster`, `tap.scholar`, `tap.inquisitor`, plus topic-specific enrichment voices for the Fante game orchestrator (`tap.adventure`, `tap.math`, `tap.languages`, `tap.lore`)
+  - **Tap user**: `tap.user` (shared across all personalities; neutral structural template — each personality decides citation/grounding policy)
   - **Store**: `store.archivist` (system), `store.user` (data + format spec), `store.images` (conditional markers block)
   - **Polish**: `polish.archivist` (system), `polish.user` (audit request)
   - **Assay/retrieval**: `assay.librarian` (system), `assay.user` (slug-selection request)
