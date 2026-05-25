@@ -15,6 +15,9 @@ services:
     environment:
       # Override with host.docker.internal if Ollama runs on the host Mac/Windows
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # Bind to all interfaces so the host can reach the container via port mapping
+      - COPPER_HOST=0.0.0.0
+      - COPPER_PORT=8000
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/docs"]
