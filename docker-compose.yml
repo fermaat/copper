@@ -12,15 +12,20 @@ services:
       - copper-minds:/data/minds
     env_file:
       - .env
-    environment:
+    # environment:
       # Override with host.docker.internal if Ollama runs on the host Mac/Windows
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       # Bind to all interfaces so the host can reach the container via port mapping
+    environment:
       - COPPER_HOST=0.0.0.0
       - COPPER_PORT=8000
+      - COPPER_OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - COPPER_LLM_PROVIDER=ollama
+      - COPPER_LLM_MODEL=gemma4-32k:latest
+      - COPPER_MINDS_DIR=/data/minds          
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/docs"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/docs').status==200 else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
