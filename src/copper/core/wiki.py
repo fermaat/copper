@@ -161,10 +161,12 @@ class WikiManager:
            If src does not exist (already merged), logs a warning and returns.
         2. Append src body to dst body, separated by a blank line.
            Bump dst source_count by src source_count. Keep dst frontmatter/title.
-        3. Rewrite all [[src_slug]] wikilinks across every page and index.md to
-           [[dst_slug]]. Uses a bracket-exact regex — never touches [[src_slug-extra]].
-        4. Strip self-links in dst: remove any [[dst_slug]] inside dst's body.
-        5. Update index.md: remove the line(s) mentioning src_slug.
+        3. Rewrite all [[src_slug]] wikilinks across content pages to [[dst_slug]].
+           Uses a bracket-exact regex — never touches [[src_slug-extra]].
+        4. Strip self-links in dst: remove any [[dst_slug]] (and the space before
+           it) left inside dst's body after the rewrite.
+        5. Update index.md: drop src's own entry line and rewrite any remaining
+           [[src_slug]] cross-references to [[dst_slug]] (no duplicate dst entry).
         6. Delete src page file.
         7. append_log("merge", "src_slug → dst_slug").
 
@@ -193,16 +195,16 @@ class WikiManager:
         dst_fm["source_count"] = dst_count + src_count
         dst_fm["last_updated"] = datetime.now().strftime("%Y-%m-%d")
 
-        merged_body = dst.body.rstrip() + "\n\n" + src.body.strip()
+        merged_body = dst.body.strip() + "\n\n" + src.body.strip()
         new_dst_content = f"---\n{yaml.dump(dst_fm, default_flow_style=False, allow_unicode=True)}---\n\n{merged_body}"
         dst.write(new_dst_content)
 
-        # Step 3: rewrite [[src_slug]] → [[dst_slug]] across all pages + index.
+        # Step 3: rewrite [[src_slug]] → [[dst_slug]] across content pages only.
+        # The index is handled separately in step 5 to avoid duplicate entries.
         src_pattern = re.compile(rf"\[\[{re.escape(src_slug)}\]\]")
         dst_link = f"[[{dst_slug}]]"
 
-        pages_to_rewrite: list[WikiPage] = self.all_pages() + [self.index()]
-        for page in pages_to_rewrite:
+        for page in self.all_pages():
             if not page.exists():
                 continue
             rewritten = src_pattern.sub(dst_link, page.raw)
@@ -210,18 +212,26 @@ class WikiManager:
                 page.write(rewritten)
 
         # Step 4: strip self-links in dst (now that src links point to dst).
+        # Consume the whitespace preceding the link so prose like "See [[x]]."
+        # collapses to "See." instead of leaving a dangling "See .".
         dst_page = self.page(dst_slug)  # re-read after rewrite
-        self_pattern = re.compile(rf"\[\[{re.escape(dst_slug)}\]\]")
+        self_pattern = re.compile(rf"[ \t]*\[\[{re.escape(dst_slug)}\]\]")
         cleaned = self_pattern.sub("", dst_page.raw)
         if cleaned != dst_page.raw:
             dst_page.write(cleaned)
 
-        # Step 5: remove src entry from index.md.
+        # Step 5: drop src's own index entry and rewrite cross-references.
+        # An entry line is matched exactly (bullet + [[src_slug]]) so a prefix
+        # collision like merging 'steel' never removes the 'steelheart' line.
         index = self.index()
         if index.exists():
-            lines = index.raw.splitlines(keepends=True)
-            filtered = [ln for ln in lines if src_slug not in ln]
-            index.write("".join(filtered))
+            entry_pattern = re.compile(rf"^\s*[-*]\s*\[\[{re.escape(src_slug)}\]\]")
+            kept: list[str] = []
+            for ln in index.raw.splitlines(keepends=True):
+                if entry_pattern.match(ln):
+                    continue  # drop src's own entry line
+                kept.append(src_pattern.sub(dst_link, ln))  # rewrite cross-refs
+            index.write("".join(kept))
 
         # Step 6: delete src file.
         src.path.unlink()

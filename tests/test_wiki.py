@@ -222,6 +222,43 @@ def test_merge_page_index_cleaned(wiki_with_pages):
     assert "masting" not in index
 
 
+def test_merge_page_index_no_duplicate_dst_entry(wiki_with_pages):
+    """Regression: rewriting the index must not leave two [[misting]] entries.
+
+    The old code rewrote the [[masting]] index line to [[misting]], producing a
+    duplicate entry that the 'masting not in index' check failed to catch.
+    """
+    wm = wiki_with_pages
+    wm.merge_page("masting", "misting")
+
+    index = wm.read_index()
+    assert index.count("[[misting]]") == 1  # src entry dropped, not duplicated
+
+
+def test_merge_page_index_cross_reference_rewritten(wiki_dir):
+    """A [[src]] cross-reference inside another entry's description is rewritten
+    to [[dst]], while src's own bullet entry is dropped."""
+    from copper.core.wiki import WikiManager
+
+    wm = WikiManager(wiki_dir)
+    (wiki_dir / "index.md").write_text(
+        "# Índice\n\n"
+        "- [[misting]] — Habilidad misting\n"
+        "- [[masting]] — Errata, ver también [[masting]]\n"
+        "- [[steelheart]] — Un Misting, ref [[masting]]\n"
+    )
+    wm.create_page("misting", "Misting", "Un Misting usa un solo metal. [Fuente: libro.md]")
+    wm.create_page("masting", "Masting", "Errata de Misting. [Fuente: libro.md]")
+    wm.create_page("steelheart", "Steelheart", "Un Misting. [Fuente: libro.md]")
+
+    wm.merge_page("masting", "misting")
+
+    index = wm.read_index()
+    assert "[[masting]]" not in index  # own entry dropped, cross-ref rewritten
+    assert "- [[steelheart]] — Un Misting, ref [[misting]]" in index
+    assert index.count("[[misting]]") == 2  # misting's own entry + steelheart's ref
+
+
 def test_merge_page_nonexistent_src_noop(wiki_dir):
     """merge_page with missing src should be a no-op (not raise)."""
     from copper.core.wiki import WikiManager
