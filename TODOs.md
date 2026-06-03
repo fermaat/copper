@@ -8,16 +8,6 @@
 
 ## Deuda activa
 
-- **Tap context ceiling — fix de fondo** (`workflows/tap.py`)
-  El cap defensivo (`COPPER_TAP_FALLBACK_MAX_PAGES`) evita explosiones de
-  coste, pero no resuelve la raíz. Si un coppermind crece a >50 páginas y el
-  retriever falla, hoy el tap aborta con error en vez de producir respuesta.
-  *Opciones futuras:* resumen jerárquico fallback (cargar `_meta.md` + N
-  primeras líneas), retriever con relax progresivo (substring matching →
-  embeddings ligeros), o eliminar la rama "incluir todo" forzando al retriever
-  a un top-k siempre. Diferir hasta que aparezca un coppermind real con el
-  problema.
-
 - **Tap scanner — modelo más rápido** (`workflows/tap.py`)
   La paralelización de descents (Fase C.3) ya redujo la latencia user-facing.
   Si tras la comparativa A/B real (paso C.4 del plan) el scanner sigue siendo
@@ -39,6 +29,22 @@
   de uso real sin incidencias, retirar el flag legacy.
 
 ---
+
+## Resuelto (sprint polish normalize + tap fallback)
+
+- **Calidad de datos — slugs duplicados** (`core/slug_normalize.py`, `workflows/polish.py`, `core/wiki.py`) ✓
+  `find_slug_clusters` (difflib union-find, umbral configurable) + `find_self_links` detectan
+  cuasi-duplicados y auto-links sin LLM. `propose_merges` envía los clusters al LLM
+  (`polish.merge.yaml`) para confirmar. `WikiManager.merge_page` ejecuta la fusión: concatena
+  bodies, rewrites wikilinks en todo el wiki (bracket-exact regex), elimina self-links, limpia
+  índice, borra src, registra en log. CLI: `polish --fix` (con confirmación) y `--fix --yes`
+  (sin confirmación). `_meta.md` se regenera tras aplicar las fusiones.
+
+- **Tap context ceiling — fix de fondo** (`workflows/tap.py`) ✓
+  En vez de abortar con `TapFallbackError` cuando el retriever devuelve vacío y el wiki
+  supera `COPPER_TAP_FALLBACK_MAX_PAGES`, tap ahora degrada: carga `_meta.md` + primeras
+  `COPPER_TAP_FALLBACK_HEAD_LINES` líneas de cada página (acotado al cap de páginas).
+  `TapFallbackError` solo se lanza si el wiki está vacío Y sin `_meta.md` (caso degenerado real).
 
 ## Resuelto (sprint deuda técnica)
 

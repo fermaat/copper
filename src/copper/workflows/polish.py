@@ -16,8 +16,15 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+from copper.config import settings
 from copper.core.coppermind import CopperMind
 from copper.core.meta import regenerate_meta
+from copper.core.slug_normalize import (
+    MergeProposal,
+    find_self_links,
+    find_slug_clusters,
+    propose_merges,
+)
 from copper.core.wiki import WikiManager
 from copper.llm.base import LLMBase, Message
 from copper.prompts import render_prompt
@@ -73,6 +80,21 @@ class PolishWorkflow:
                 for check in structural:
                     f.write(f"- {check}\n")
 
+        # --- LLM-assisted merge proposals ---
+        merge_proposals = propose_merges(
+            self.wiki, self.llm, settings.copper_polish_slug_similarity
+        )
+        if merge_proposals:
+            with open(report_path, "a") as f:
+                f.write("\n## Propuestas de fusión\n\n")
+                for proposal in merge_proposals:
+                    dups = ", ".join(proposal.duplicates)
+                    f.write(f"- **{dups}** → `{proposal.canonical}` — {proposal.reason}\n")
+            structural = structural + [
+                f"🟠 Fusión propuesta: {', '.join(p.duplicates)} → `{p.canonical}`"
+                for p in merge_proposals
+            ]
+
         self.mind.append_log("polish", f"Informe de salud generado → {report_path.name}")
 
         # --- Regenerate _meta.md for this mind ---
@@ -86,6 +108,7 @@ class PolishWorkflow:
             report_path=report_path,
             report_text=response.text,
             structural_issues=structural,
+            merge_proposals=merge_proposals,
             tokens_used=total_tokens,
             cost_usd=total_cost,
             children_results=children_results,
@@ -126,6 +149,17 @@ def _structural_checks(wiki: WikiManager) -> list[str]:
         if slug not in index_content:
             issues.append(f"🟡 Página huérfana (no está en el índice): `{slug}`")
 
+    # Slug near-duplicate clusters
+    threshold = settings.copper_polish_slug_similarity
+    clusters = find_slug_clusters(list(all_slugs), threshold)
+    for cluster in clusters:
+        slugs_str = ", ".join(cluster.slugs)
+        issues.append(f"🟠 Candidatas a fusión: [{slugs_str}] ({cluster.reason})")
+
+    # Self-links
+    for self_link in find_self_links(all_pages):
+        issues.append(f"🟠 Self-link detectado en: `{self_link.slug}`")
+
     return issues
 
 
@@ -140,6 +174,7 @@ class PolishResult:
         cost_usd: float = 0.0,
         children_results: list["PolishResult"] | None = None,
         meta_path: Path | None = None,
+        merge_proposals: list[MergeProposal] | None = None,
     ):
         self.mind_name = mind_name
         self.report_path = report_path
@@ -149,6 +184,7 @@ class PolishResult:
         self.cost_usd = cost_usd
         self.children_results = children_results or []
         self.meta_path = meta_path
+        self.merge_proposals = merge_proposals or []
 
     def __repr__(self) -> str:
         return (

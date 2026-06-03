@@ -87,9 +87,11 @@ class Settings(CoreSettings):
     # Tap: maximum depth for recursive scanner descent in hierarchical copperminds.
     # At depth == copper_tap_max_depth the mind is treated as a leaf (retriever used).
     copper_tap_max_depth: int = 2
-    # Tap: if retrieval returns no slugs and the wiki exceeds this page count,
-    # raise TapFallbackError instead of silently loading everything into context.
+    # Tap: if retrieval returns no slugs, build a degraded context from _meta.md +
+    # first N lines of each page (capped at copper_tap_fallback_max_pages pages).
     copper_tap_fallback_max_pages: int = 50
+    # Tap: number of body lines included per page in the degraded context.
+    copper_tap_fallback_head_lines: int = 8
     # Tap: enable per-step timing via core_utils.Profiler (logged at INFO level).
     copper_tap_profile: bool = False
     # Tap: use legacy sequential descent instead of parallel (safety escape hatch).
@@ -115,6 +117,9 @@ class Settings(CoreSettings):
     copper_ingest_save_images: bool = True
     # Minimum chunks required to trigger PDF structure detection.
     copper_pdf_structure_min_chunks: int = 8
+    # Polish: minimum string-similarity ratio to flag two slugs as near-duplicate candidates.
+    copper_polish_slug_similarity: float = 0.85
+
     # Deep polish caps — prevent runaway LLM calls on large trees.
     copper_deep_polish_max_moves: int = 30
     copper_deep_polish_max_transversal: int = 10

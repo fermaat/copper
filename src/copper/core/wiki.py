@@ -12,6 +12,8 @@ from typing import Any
 
 import yaml
 
+from core_utils.logger import logger
+
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 
 
@@ -73,7 +75,8 @@ class WikiManager:
         return [
             WikiPage(p)
             for p in sorted(self.wiki_dir.glob("*.md"))
-            if p.name not in ("index.md", "log.md") and not p.name.startswith("lint-report")
+            if p.name not in ("index.md", "log.md", "_meta.md")
+            and not p.name.startswith("lint-report")
         ]
 
     def create_page(
@@ -149,6 +152,82 @@ class WikiManager:
 
     def find_pages_mentioning(self, term: str) -> list[WikiPage]:
         return [p for p in self.all_pages() if term.lower() in p.raw.lower()]
+
+    def merge_page(self, src_slug: str, dst_slug: str) -> None:
+        """Merge page src_slug into dst_slug within this wiki.
+
+        Steps (in order):
+        1. Guard: both pages must exist; src != dst. Raises ValueError otherwise.
+           If src does not exist (already merged), logs a warning and returns.
+        2. Append src body to dst body, separated by a blank line.
+           Bump dst source_count by src source_count. Keep dst frontmatter/title.
+        3. Rewrite all [[src_slug]] wikilinks across every page and index.md to
+           [[dst_slug]]. Uses a bracket-exact regex — never touches [[src_slug-extra]].
+        4. Strip self-links in dst: remove any [[dst_slug]] inside dst's body.
+        5. Update index.md: remove the line(s) mentioning src_slug.
+        6. Delete src page file.
+        7. append_log("merge", "src_slug → dst_slug").
+
+        Chained merges (a→b followed by b→c) work naturally when executed
+        serially: each call operates on the current wiki state.
+        """
+        src = self.page(src_slug)
+        dst = self.page(dst_slug)
+
+        if src_slug == dst_slug:
+            raise ValueError(f"Cannot merge a page into itself: '{src_slug}'")
+
+        if not src.exists():
+            logger.warning(f"[wiki] merge_page: src '{src_slug}' no existe — no-op")
+            return
+
+        if not dst.exists():
+            raise ValueError(f"Cannot merge into non-existent page '{dst_slug}'")
+
+        # Step 2: append src body to dst, bump source_count.
+        src_fm = src.frontmatter
+        dst_fm = dst.frontmatter
+
+        src_count = int(src_fm.get("source_count", 1))
+        dst_count = int(dst_fm.get("source_count", 1))
+        dst_fm["source_count"] = dst_count + src_count
+        dst_fm["last_updated"] = datetime.now().strftime("%Y-%m-%d")
+
+        merged_body = dst.body.rstrip() + "\n\n" + src.body.strip()
+        new_dst_content = f"---\n{yaml.dump(dst_fm, default_flow_style=False, allow_unicode=True)}---\n\n{merged_body}"
+        dst.write(new_dst_content)
+
+        # Step 3: rewrite [[src_slug]] → [[dst_slug]] across all pages + index.
+        src_pattern = re.compile(rf"\[\[{re.escape(src_slug)}\]\]")
+        dst_link = f"[[{dst_slug}]]"
+
+        pages_to_rewrite: list[WikiPage] = self.all_pages() + [self.index()]
+        for page in pages_to_rewrite:
+            if not page.exists():
+                continue
+            rewritten = src_pattern.sub(dst_link, page.raw)
+            if rewritten != page.raw:
+                page.write(rewritten)
+
+        # Step 4: strip self-links in dst (now that src links point to dst).
+        dst_page = self.page(dst_slug)  # re-read after rewrite
+        self_pattern = re.compile(rf"\[\[{re.escape(dst_slug)}\]\]")
+        cleaned = self_pattern.sub("", dst_page.raw)
+        if cleaned != dst_page.raw:
+            dst_page.write(cleaned)
+
+        # Step 5: remove src entry from index.md.
+        index = self.index()
+        if index.exists():
+            lines = index.raw.splitlines(keepends=True)
+            filtered = [ln for ln in lines if src_slug not in ln]
+            index.write("".join(filtered))
+
+        # Step 6: delete src file.
+        src.path.unlink()
+
+        # Step 7: log.
+        self.append_log("merge", f"{src_slug} → {dst_slug}")
 
 
 def _to_slug(text: str) -> str:

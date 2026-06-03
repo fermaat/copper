@@ -295,6 +295,9 @@ def polish(
     yes: Annotated[
         bool, typer.Option("--yes", "-y", help="Aplica todas las acciones sin confirmación")
     ] = False,
+    fix: Annotated[
+        bool, typer.Option("--fix", help="Aplica las fusiones de slugs propuestas")
+    ] = False,
 ):
     """🪙  Polish a coppermind (health check)."""
     try:
@@ -331,6 +334,45 @@ def polish(
 
     cost_str = f" · ${result.cost_usd:.4f}" if result.cost_usd else ""
     console.print(f"\n[dim]Informe guardado en: {result.report_path}{cost_str}[/dim]")
+
+    if fix and result.merge_proposals:
+        _apply_merge_proposals(mind, llm, result.merge_proposals, auto_yes=yes)
+    elif fix and not result.merge_proposals:
+        console.print("\n[dim]No se encontraron fusiones candidatas.[/dim]")
+
+
+def _apply_merge_proposals(mind, llm, proposals, *, auto_yes: bool) -> None:
+    """Ask for confirmation and execute merge proposals from polish --fix."""
+    from copper.core.meta import regenerate_meta
+
+    console.print("\n[bold yellow]Fusiones propuestas:[/bold yellow]")
+    for p in proposals:
+        dups = ", ".join(p.duplicates)
+        console.print(f"  🟠 [{dups}] → [bold]{p.canonical}[/bold]  ({p.reason})")
+
+    if not auto_yes:
+        confirm = typer.confirm("\n¿Aplicar todas las fusiones?", default=False)
+        if not confirm:
+            console.print("[dim]Fusiones canceladas.[/dim]")
+            return
+
+    wiki = mind.wiki
+    applied = 0
+    for proposal in proposals:
+        for dup in proposal.duplicates:
+            try:
+                wiki.merge_page(dup, proposal.canonical)
+                console.print(
+                    f"  ✓ Fusionado: [dim]{dup}[/dim] → [bold]{proposal.canonical}[/bold]"
+                )
+                applied += 1
+            except (ValueError, FileNotFoundError) as e:
+                console.print(f"  [red]✗ Error al fusionar {dup} → {proposal.canonical}: {e}[/red]")
+
+    if applied:
+        with console.status("[cyan]Regenerando _meta.md...[/cyan]"):
+            regenerate_meta(mind, llm)
+        console.print(f"\n[green]✓ {applied} fusión(es) aplicada(s). _meta.md actualizado.[/green]")
 
 
 def _polish_deep(mind, llm, *, dry_run: bool, auto_yes: bool) -> None:

@@ -1,4 +1,4 @@
-# Copper · v1.0.0
+# Copper · v2.1.3
 
 AI-maintained knowledge bases, inspired by Karpathy's wiki concept and the Cosmere's *copperminds* — repositories of pure knowledge, maintained by a Feruchemical Archivist.
 
@@ -121,6 +121,8 @@ copper polish <name>                            Wiki health check
   --deep                                        Structural reorganisation: map-reduce across children
   --dry-run                                     Show the reorganisation plan without applying it
   --yes / -y                                    Apply all actions without prompting
+  --fix                                         Apply LLM-proposed slug merges (asks for confirmation)
+  --fix --yes                                   Apply all slug merges without prompting
 copper list                                     List all copperminds (tree view)
 copper status <name>                            Show stats for a coppermind
 copper link <a> <b>                             Link two copperminds

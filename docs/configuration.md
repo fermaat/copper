@@ -87,6 +87,9 @@ Override the generic fallback for specific stages of the pipeline.
 | `COPPER_TAP_MAX_PAGES` | `12` | Phase 1 — max wiki pages the LLM-based retriever can pick from the index in a single call |
 | `COPPER_TAP_MAX_PAGES_TOTAL` | `20` | Hard ceiling on total pages sent to Phase 2 (after keyword augmentation) |
 | `COPPER_TAP_PERSONALITY` | `tap.archivist` | Default tap personality (prompt name) when none is set per-mind or per-request. See `copper personalities` for the full list. |
+| `COPPER_TAP_FALLBACK_MAX_PAGES` | `50` | When retrieval returns nothing, cap the degraded context at this many pages (headers only). Pages beyond the cap are omitted. |
+| `COPPER_TAP_FALLBACK_HEAD_LINES` | `8` | Number of body lines included per page in the degraded fallback context. |
+| `COPPER_POLISH_SLUG_SIMILARITY` | `0.85` | Minimum string-similarity ratio (0.0–1.0) to flag two page slugs as near-duplicate candidates during `polish`. Lower = more candidates (more noise); higher = fewer (may miss typos). |
 
 ## Custom prompts
 

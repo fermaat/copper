@@ -9,7 +9,8 @@ AI-maintained knowledge bases ("copperminds"). An LLM Archivist reads raw source
 src/copper/
 ├── core/
 │   ├── coppermind.py    # CopperMind class — forge/get/link/stats; MINDS_DIR = ~/.copper/minds/
-│   └── wiki.py          # WikiManager — page CRUD, frontmatter, index, log
+│   ├── wiki.py          # WikiManager — page CRUD, frontmatter, index, log, merge_page
+│   └── slug_normalize.py # Slug duplicate detection + LLM-assisted merge proposals
 ├── ingest/
 │   ├── base.py          # IngestPlugin (abstract) + naive_split(); default to_chunks() impl
 │   ├── plain.py         # PlainTextPlugin — .md, .txt, any UTF-8 (sniff-based detection)
@@ -98,7 +99,7 @@ src/copper/
 **Workflows**
 - `StoreWorkflow(mind, llm).run(path)` → `registry.to_chunks()` → per-chunk LLM call (refreshes index between chunks) → `_normalize_xml` + `_parse_wiki_pages` (relaxed parser: any attr order, auto-close truncated) → wiki pages → visual marker carry-over across ingots → `regenerate_meta` on success → auto-polish if multi-chunk → `StoreResult`
 - `TapWorkflow(minds, llm).run(question, history=None)` → retrieves relevant pages → builds context → appends optional prior turns → LLM → `TapResult`. `history` is a list of `Message(role, content)` for multi-turn chat.
-- `PolishWorkflow(mind, llm).run()` → structural checks (orphans, stubs, missing backlinks) + LLM audit → `wiki/lint-report-<date>.md`
+- `PolishWorkflow(mind, llm).run()` → structural checks (orphans, stubs, missing backlinks, near-duplicate slugs, self-links) + LLM audit + merge proposals → `wiki/lint-report-<date>.md`. Use `--fix` to apply merges.
 
 **Settings** (`config.py`)
 - Subclasses `CoreSettings` from `core-utils`; adds `env_file` pointing to project `.env`
@@ -183,7 +184,8 @@ Resolution order: **per-mind `.copper/config.yaml` → workflow env var → gene
   - Phase 7 ✓ — API tree navigation (`GET /minds` includes children, `GET /minds/{parent}/{child}` path routing), HTMX sidebar shows nested tree, watch covers all descendants
 - Tech debt sprint ✓ — `copper move`, same-tree link warning, per-mind `max_depth`, `_meta.md` refresh after every store (`core/meta.py`), `TapFallbackError` cap, profiler instrumentation, parallel hierarchical descents (`ThreadPoolExecutor`)
 - Tech debt sprint v2 ✓ — relaxed XML parser (any attr order, auto-close truncated, empty vs malformed retry hints), visual marker carry-over across ingots, richer orphan-marker logs, `GET /minds/{name:path}/wiki/tree` endpoint, UI full-tree wiki view grouped by mind
+- Polish normalize sprint ✓ — `slug_normalize.py` (A1: structural detection via `find_slug_clusters`/`find_self_links`; A2: LLM `propose_merges` via `polish.merge.yaml`; A3: `WikiManager.merge_page` + `polish --fix`), tap fallback degraded to `_meta` + headers instead of hard error (B1)
 
 ## Known technical debt
 
-- **Tap context ceiling**: guarded by `TapFallbackError` (raises when retrieval returns nothing and wiki exceeds `COPPER_TAP_FALLBACK_MAX_PAGES=50`). The `LLMRetriever` + `KeywordRetriever` pipeline covers most queries.
+- **Tap scanner — faster model override**: if scanner latency is a bottleneck at scale, consider a `tap_scanner_model` per-mind override. Risk: quality divergence. See TODOs.md.

@@ -1,0 +1,27 @@
+name: polish.merge
+description: |
+  Asks the LLM to confirm which near-duplicate slug clusters should be merged
+  and to choose the canonical slug for each. Called during polish with a
+  shortlist of structurally similar slugs.
+  Variables: clusters_context.
+template: |
+  You are the Archivist reviewing near-duplicate page candidates in a wiki.
+
+  For each cluster below, decide whether the pages represent the SAME entity
+  (typo, plural variant, or exact duplicate) and therefore should be merged.
+
+  RULES:
+  - Merge ONLY if the pages clearly represent the same concept or one is a
+    typo/misspelling of the other. When in doubt, do NOT merge.
+  - The canonical slug must be one of the slugs already in the cluster.
+  - Do not invent new slugs.
+  - If no cluster warrants a merge, respond with an empty block.
+
+  For each merge, respond with XML in this exact format:
+  <merge canonical="<correct-slug>">
+    <duplicate><slug-to-absorb></duplicate>
+    <reason>Brief explanation (e.g. "Misspelling of Misting")</reason>
+  </merge>
+
+  CANDIDATES:
+  $clusters_context
