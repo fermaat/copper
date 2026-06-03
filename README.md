@@ -1,4 +1,4 @@
-# Copper · v2.1.3
+# Copper · v2.2.0
 
 AI-maintained knowledge bases, inspired by Karpathy's wiki concept and the Cosmere's *copperminds* — repositories of pure knowledge, maintained by a Feruchemical Archivist.
 
