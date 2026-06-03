@@ -603,27 +603,38 @@ class TestPolishWorkflow:
 
 
 class TestTapFallbackCap:
-    def test_fallback_raises_when_wiki_exceeds_cap(self, tmp_minds_dir, monkeypatch):
+    def test_fallback_degrades_when_wiki_exceeds_cap(self, tmp_minds_dir, monkeypatch):
+        """Large wiki + empty retriever → degraded context, no exception."""
         from copper.core.coppermind import CopperMind
         from copper.core.wiki import WikiManager
         from copper.llm.mock import MockLLM
-        from copper.workflows.tap import TapWorkflow, TapFallbackError
+        from copper.workflows.tap import TapWorkflow
 
         mind = CopperMind.forge("grande", "big mind")
         wiki = WikiManager(mind.wiki_dir)
         for i in range(3):
             wiki.create_page(f"page-{i}", f"Page {i}", f"Content {i}. [Fuente: src]")
+        # Write _meta.md so the degraded context has content.
+        mind.meta_summary_path.write_text("Resumen general del wiki.\n")
 
         monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_fallback_max_pages", 2)
+        monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_fallback_head_lines", 3)
 
-        # Retriever returns no slugs (empty response → no PAGE: markers)
-        llm = MockLLM(["", "Answer."])
+        # Retriever returns no slugs (empty response → no PAGE: markers).
+        llm = MockLLM(["", "Respuesta degradada."])
         workflow = TapWorkflow([mind], llm)
 
-        with pytest.raises(TapFallbackError, match="refrasea"):
-            workflow.run("¿pregunta?")
+        # Should NOT raise — degraded context is built instead.
+        result = workflow.run("¿pregunta?")
+        assert result.answer == "Respuesta degradada."
 
-    def test_fallback_loads_all_when_under_cap(self, tmp_minds_dir, monkeypatch):
+        # Degraded context includes _meta and page headers (capped at 2).
+        context = llm.calls[-1][-1].content
+        assert "Resumen general" in context
+        assert "page-0" in context or "page-1" in context
+
+    def test_fallback_degraded_context_contains_meta_and_headers(self, tmp_minds_dir, monkeypatch):
+        """Degraded context should include _meta.md + first N lines of pages."""
         from copper.core.coppermind import CopperMind
         from copper.core.wiki import WikiManager
         from copper.llm.mock import MockLLM
@@ -633,18 +644,36 @@ class TestTapFallbackCap:
         wiki = WikiManager(mind.wiki_dir)
         for i in range(2):
             wiki.create_page(f"pg-{i}", f"Pg {i}", f"Content {i}. [Fuente: src]")
+        mind.meta_summary_path.write_text("_meta content.\n")
 
         monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_fallback_max_pages", 5)
+        monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_fallback_head_lines", 3)
 
         llm = MockLLM(["", "Respuesta fallback."])
         workflow = TapWorkflow([mind], llm)
         result = workflow.run("¿pregunta?")
 
         assert result.answer == "Respuesta fallback."
-        # Both pages should appear in context (fallback loads all)
-        answer_content = llm.calls[-1][-1].content
-        assert "pg-0" in answer_content
-        assert "pg-1" in answer_content
+        context = llm.calls[-1][-1].content
+        assert "_meta content" in context
+        assert "pg-0" in context
+        assert "pg-1" in context
+
+    def test_fallback_returns_empty_for_empty_wiki(self, tmp_minds_dir):
+        """Empty wiki with no _meta.md: tap degrades gracefully, no exception."""
+        from copper.core.coppermind import CopperMind
+        from copper.llm.mock import MockLLM
+        from copper.workflows.tap import TapWorkflow
+
+        mind = CopperMind.forge("vacio", "empty mind")
+        # No pages, no _meta.md — but wiki_dir was created by forge.
+
+        llm = MockLLM(["", "Respuesta con wiki vacío."])
+        workflow = TapWorkflow([mind], llm)
+
+        # Should NOT raise — returns answer based on index context alone.
+        result = workflow.run("¿pregunta?")
+        assert result.answer == "Respuesta con wiki vacío."
 
     def test_fallback_not_triggered_when_retriever_returns_pages(self, tmp_minds_dir):
         from copper.core.coppermind import CopperMind

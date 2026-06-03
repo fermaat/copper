@@ -35,7 +35,7 @@ DEFAULT_TAP_PERSONALITY = "tap.archivist"
 
 
 class TapFallbackError(RuntimeError):
-    """Raised when retrieval returns no pages and the wiki exceeds the fallback cap."""
+    """Raised when retrieval returns no pages AND the wiki is empty with no _meta.md."""
 
 
 class TapWorkflow:
@@ -332,6 +332,42 @@ def _build_transversal_context(mind: CopperMind) -> str:
     return "\n\n".join(parts)
 
 
+def _degraded_context(mind: CopperMind, wiki: WikiManager, head_lines: int, cap: int) -> str:
+    """Build a degraded context when the retriever returns nothing.
+
+    Loads:
+    1. _meta.md (full content) if it exists.
+    2. Title + first head_lines lines of body for each content page, capped at
+       the first `cap` pages when the wiki is large.
+
+    Returns an empty string if both _meta.md is absent and the wiki has no
+    content pages — the LLM will work with just the index context. Raises
+    TapFallbackError only if the wiki has no pages, no _meta.md, and the wiki
+    directory itself does not exist (completely uninitialised).
+    """
+    meta_path = mind.meta_summary_path
+    all_pages = wiki.all_pages()
+    has_meta = meta_path.exists()
+
+    if not has_meta and not all_pages and not wiki.wiki_dir.exists():
+        raise TapFallbackError(
+            f"Wiki '{mind.name}' no inicializado — " "almacena conocimiento con: copper store"
+        )
+
+    parts: list[str] = []
+
+    if has_meta:
+        parts.append(f"### _meta\n{meta_path.read_text()}")
+
+    pages_to_include = all_pages[:cap]
+    for page in pages_to_include:
+        title = page.frontmatter.get("title", page.name) if page.frontmatter else page.name
+        header_lines = "\n".join(page.body.strip().splitlines()[:head_lines])
+        parts.append(f"### {page.name} ({title})\n{header_lines}")
+
+    return "\n\n".join(parts)
+
+
 def _build_context(minds: list[CopperMind], selected: dict[str, list[str]]) -> str:
     """Build context loading only the pages selected by the retriever."""
     parts: list[str] = []
@@ -351,17 +387,16 @@ def _build_context(minds: list[CopperMind], selected: dict[str, list[str]]) -> s
                 logger.warning(f"[tap] Page '{slug}' selected but not found in '{mind.name}'")
 
         if not slugs:
-            # Fallback: no pages selected — include all (rare, but guarded by a cap).
-            all_pages = wiki.all_pages()
-            cap = settings.copper_tap_fallback_max_pages
-            if len(all_pages) > cap:
-                raise TapFallbackError(
-                    f"Retrieval returned no pages and the wiki has {len(all_pages)} pages — "
-                    f"refrasea la consulta o ajusta el index.md. (cap: {cap})"
-                )
-            logger.warning(f"[tap] No pages selected for '{mind.name}', falling back to full wiki")
-            for page in all_pages:
-                parts.append(f"### Page: {page.name}\n{page.raw}")
+            logger.warning(
+                f"[tap] Retriever vacío para '{mind.name}', degradando a _meta + cabeceras"
+            )
+            degraded = _degraded_context(
+                mind,
+                wiki,
+                head_lines=settings.copper_tap_fallback_head_lines,
+                cap=settings.copper_tap_fallback_max_pages,
+            )
+            parts.append(degraded)
 
     return "\n\n".join(parts)
 

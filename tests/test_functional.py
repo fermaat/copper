@@ -1043,51 +1043,53 @@ def test_fase_a3_max_depth_per_mind(tmp_minds_dir):
 
 def test_fase_c_tap_fallback_cap(tmp_minds_dir, monkeypatch):
     """
-    C.1 — When the retriever returns no pages and the wiki exceeds
-    copper_tap_fallback_max_pages, TapFallbackError is raised instead
-    of silently loading the entire wiki into context.
-    When under the cap, the fallback loads all pages normally.
+    C.1 — When the retriever returns no pages, tap now degrades to _meta +
+    page headers instead of raising TapFallbackError.
+    copper_tap_fallback_max_pages acts as a cap on the number of page headers
+    included in the degraded context.
     """
     from copper.core.coppermind import CopperMind
     from copper.core.wiki import WikiManager
     from copper.llm.mock import MockLLM
-    from copper.workflows.tap import TapWorkflow, TapFallbackError
+    from copper.workflows.tap import TapWorkflow
 
-    print("\n=== Fase C.1 — Fallback cap ===\n")
+    print("\n=== Fase C.1 — Fallback degradado (B1) ===\n")
 
-    # Build a mind with 3 pages
+    # Build a mind with 3 pages and a _meta.md.
     mind = CopperMind.forge("grande", "large mind")
     wiki = WikiManager(mind.wiki_dir)
     for i in range(3):
         wiki.create_page(f"pagina-{i}", f"Pagina {i}", f"Contenido {i}. [Fuente: src]")
+    mind.meta_summary_path.write_text("Resumen: 3 páginas sobre large mind.\n")
 
-    print(f"  Wiki tiene {len(wiki.all_pages())} páginas")
+    print(f"  Wiki tiene {len(wiki.all_pages())} páginas + _meta.md")
 
-    # Cap below page count → fallback must raise
+    # Cap below page count → degraded context limited to 2 page headers.
     monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_fallback_max_pages", 2)
-    llm_over = MockLLM(["", "Respuesta."])  # empty retriever response
-    workflow_over = TapWorkflow([mind], llm_over)
+    monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_fallback_head_lines", 3)
+    llm_over = MockLLM(["", "Respuesta degradada."])
+    result_over = TapWorkflow([mind], llm_over).run("¿pregunta?")
 
-    try:
-        workflow_over.run("¿pregunta?")
-        assert False, "Debería haber lanzado TapFallbackError"
-    except TapFallbackError as e:
-        print(f"  TapFallbackError lanzado correctamente: {str(e)[:80]}")
-        assert "refrasea" in str(e).lower() or "cap" in str(e).lower()
+    assert result_over.answer == "Respuesta degradada."
+    ctx_over = llm_over.calls[-1][-1].content
+    assert "Resumen" in ctx_over  # _meta.md included
+    # Only first 2 pages in context (cap applied).
+    assert "pagina-0" in ctx_over
+    assert "pagina-1" in ctx_over
+    print(f"  Cap=2: contexto acotado correctamente ✓")
 
-    # Cap above page count → fallback loads all pages silently
+    # Cap above page count → all 3 pages included in degraded context.
     monkeypatch.setattr("copper.workflows.tap.settings.copper_tap_fallback_max_pages", 10)
     llm_under = MockLLM(["", "Respuesta fallback."])
     result = TapWorkflow([mind], llm_under).run("¿pregunta?")
     assert result.answer == "Respuesta fallback."
 
-    # All 3 pages appear in context
     answer_ctx = llm_under.calls[-1][-1].content
     for i in range(3):
         assert f"pagina-{i}" in answer_ctx, f"pagina-{i} not in context"
-    print(f"  Fallback bajo cap: {len(wiki.all_pages())} páginas cargadas en contexto ✓")
+    print(f"  Cap=10: las {len(wiki.all_pages())} páginas incluidas ✓")
 
-    print("\n✓ Fallback cap: error cuando excede, carga silenciosa cuando no")
+    print("\n✓ Fallback degradado: _meta + cabeceras de páginas, sin error duro")
 
 
 def test_fase_c_profiler_instrumentation(tmp_minds_dir, monkeypatch):
