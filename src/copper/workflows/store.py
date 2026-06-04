@@ -246,6 +246,7 @@ class StoreWorkflow:
         proposal: "StructureProposal",
         pre_tokens: int,
         pre_cost: float,
+        auto_polish: bool = True,
     ) -> "StoreResult":
         """Store each cluster of chunks into its own child coppermind."""
         import tempfile
@@ -279,7 +280,7 @@ class StoreWorkflow:
 
             try:
                 child_wf = StoreWorkflow(child, self.llm, self.image_describer)
-                child_result = child_wf.run(tmp_path, no_route=True)
+                child_result = child_wf.run(tmp_path, no_route=True, auto_polish=auto_polish)
                 all_pages.extend(child_result.pages_written)
                 total_tokens += child_result.tokens_used
                 total_cost += child_result.cost_usd
@@ -312,6 +313,7 @@ class StoreWorkflow:
         source_path: Path,
         no_route: bool = False,
         into: str | None = None,
+        auto_polish: bool = True,
     ) -> "StoreResult":
         if not source_path.exists():
             raise FileNotFoundError(f"Fuente no encontrada: {source_path}")
@@ -334,7 +336,7 @@ class StoreWorkflow:
 
         if target_mind is not self.mind:
             child_wf = StoreWorkflow(target_mind, self.llm, self.image_describer)
-            child_result = child_wf.run(source_path, no_route=True)
+            child_result = child_wf.run(source_path, no_route=True, auto_polish=auto_polish)
             # Child's _meta was refreshed by its own run(). Refresh parent so its
             # summary reflects the child's new content.
             regenerate_meta(self.mind, self.llm)
@@ -386,6 +388,7 @@ class StoreWorkflow:
                     proposal,
                     pre_tokens=router_tokens + struct_tokens,
                     pre_cost=router_cost + struct_cost,
+                    auto_polish=auto_polish,
                 )
 
         schema = self.mind.schema()
@@ -481,7 +484,9 @@ class StoreWorkflow:
 
         # After multi-ingot forging, run polish to consolidate duplicates and fix gaps.
         # PolishWorkflow.run() calls regenerate_meta internally, so no extra call needed.
-        if total_ingots > 1:
+        # Deferred polish (auto_polish=False) skips this for bulk ingestion — the caller
+        # is expected to run a single polish at the end. _meta is still refreshed below.
+        if total_ingots > 1 and auto_polish:
             logger.info(f"[store] Running consolidation polish ({len(all_pages)} wiki pages)...")
             from copper.workflows.polish import PolishWorkflow
 

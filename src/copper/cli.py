@@ -138,6 +138,14 @@ def store(
             "--flat", help="Desactivar la detección de estructura en PDFs (almacena plano)"
         ),
     ] = False,
+    no_polish: Annotated[
+        bool,
+        typer.Option(
+            "--no-polish",
+            help="Omitir el auto-polish tras cada fichero (útil para ingesta masiva; "
+            "lanza un 'copper polish' al final)",
+        ),
+    ] = False,
 ):
     """📥  Store knowledge into a coppermind (fill it)."""
     try:
@@ -177,7 +185,9 @@ def store(
             f"[cyan]Almacenando '{src.name}' en la [copper]mentecobre[/copper]...[/cyan]"
         ):
             try:
-                result = workflow.run(src, no_route=no_route or flat, into=into)
+                result = workflow.run(
+                    src, no_route=no_route or flat, into=into, auto_polish=not no_polish
+                )
             except (FileNotFoundError, ValueError) as e:
                 console.print(f"[red]✗ {e}[/red]")
                 continue

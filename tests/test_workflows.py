@@ -58,6 +58,34 @@ class TestStoreWorkflow:
         assert "transformers" in result.pages_written
         assert llm._call_count == 2  # archivist + meta
 
+    def test_store_no_polish_skips_consolidation(self, mind, tmp_path, monkeypatch):
+        """auto_polish=False skips the post-store polish but still refreshes _meta."""
+        from copper.workflows.store import StoreWorkflow
+        from copper.workflows import polish as polish_mod
+        from copper.llm.mock import MockLLM
+
+        # Source large enough to split into multiple ingots (> MAX_CHUNK_CHARS).
+        big = tmp_path / "big.md"
+        big.write_text("# Big\n\n" + ("Mucho contenido de relleno. " * 1200))
+
+        polish_calls = {"n": 0}
+        orig_run = polish_mod.PolishWorkflow.run
+
+        def spy_run(self, *a, **k):
+            polish_calls["n"] += 1
+            return orig_run(self, *a, **k)
+
+        monkeypatch.setattr(polish_mod.PolishWorkflow, "run", spy_run)
+
+        # Deferred polish: no consolidation, but _meta is still written.
+        StoreWorkflow(mind, MockLLM()).run(big, auto_polish=False)
+        assert polish_calls["n"] == 0
+        assert (mind.wiki_dir / "_meta.md").exists()
+
+        # Default: consolidation polish runs once.
+        StoreWorkflow(mind, MockLLM()).run(big, auto_polish=True)
+        assert polish_calls["n"] == 1
+
     def test_store_creates_wiki_page(self, mind, source_file):
         from copper.workflows.store import StoreWorkflow
         from copper.llm.mock import MockLLM

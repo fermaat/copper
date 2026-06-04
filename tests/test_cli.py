@@ -36,9 +36,10 @@ def _stub_store_deps(monkeypatch, responses: list[str] | None = None):
 
     captured: dict = {}
 
-    def fake_run(self, source_path, no_route=False, into=None):
+    def fake_run(self, source_path, no_route=False, into=None, auto_polish=True):
         captured["no_route"] = no_route
         captured["into"] = into
+        captured["auto_polish"] = auto_polish
         captured["source"] = source_path
         return StoreResult(source=source_path.name, pages_written=["p1"], tokens_used=0)
 
@@ -175,6 +176,22 @@ def test_store_default_flags_unchanged(tmp_minds_dir, tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert captured["no_route"] is False
     assert captured["into"] is None
+    assert captured["auto_polish"] is True
+
+
+def test_store_no_polish_flag(tmp_minds_dir, tmp_path, monkeypatch):
+    """--no-polish passes auto_polish=False through to the workflow."""
+    from copper.core.coppermind import CopperMind
+
+    CopperMind.forge("mente", "tema")
+    src = tmp_path / "doc.txt"
+    src.write_text("contenido")
+
+    captured = _stub_store_deps(monkeypatch)
+    result = runner.invoke(app, ["store", "mente", str(src), "--no-polish"])
+
+    assert result.exit_code == 0, result.output
+    assert captured["auto_polish"] is False
 
 
 # ------------------------------------------------------------------ #

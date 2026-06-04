@@ -495,9 +495,10 @@ def test_phase6_cli_ergonomics(tmp_minds_dir, tmp_path, monkeypatch):
 
     captured_store: dict = {}
 
-    def fake_store_run(self, source_path, no_route=False, into=None):
+    def fake_store_run(self, source_path, no_route=False, into=None, auto_polish=True):
         captured_store["no_route"] = no_route
         captured_store["into"] = into
+        captured_store["auto_polish"] = auto_polish
         return StoreResult(source=source_path.name, pages_written=["p1"], tokens_used=0)
 
     monkeypatch.setattr("copper.workflows.store.StoreWorkflow.run", fake_store_run)
@@ -516,6 +517,13 @@ def test_phase6_cli_ergonomics(tmp_minds_dir, tmp_path, monkeypatch):
     r = runner.invoke(app, ["store", "aventura", str(src), "--flat"])
     assert captured_store["no_route"] is True
     print(f"store --flat           → no_route={captured_store['no_route']} (alias)")
+
+    # ── store defaults to auto_polish; --no-polish disables it ────
+    r = runner.invoke(app, ["store", "aventura", str(src)])
+    assert captured_store["auto_polish"] is True
+    r = runner.invoke(app, ["store", "aventura", str(src), "--no-polish"])
+    assert captured_store["auto_polish"] is False
+    print(f"store --no-polish      → auto_polish={captured_store['auto_polish']}")
 
     # ── polish --depth 0 caps recursion ──────────────────────────
     captured_polish: dict = {}
