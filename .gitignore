@@ -52,3 +52,7 @@ data/
 # Local scripts (not versioned)
 launch_container.sh
 run_tests.sh
+
+# Ingestion run artifacts (per-run logs + timing reports)
+ingest_cosmere_*.log
+ingest_profile_*.md
