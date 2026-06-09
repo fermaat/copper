@@ -8,8 +8,9 @@ services:
     ports:
       - "${COPPER_PORT:-8000}:8000"
     volumes:
-      # Persist copperminds across container restarts
-      - copper-minds:/data/minds
+      # Bind-mount the host's copperminds so the container shares the same store
+      # as the local CLI (~/.copper/minds). Matches launch_container.sh.
+      - ${HOME}/.copper/minds:/data/minds
     env_file:
       - .env
     # environment:
@@ -29,7 +30,3 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
-volumes:
-  copper-minds:
-    driver: local
